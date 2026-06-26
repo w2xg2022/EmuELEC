@@ -39,7 +39,8 @@ PKG_AUTORECONF="no"
 
 PKG_CMAKE_OPTS_TARGET="-DPLAYER_TARGET_PLATFORM=libretro \
                        -DBUILD_SHARED_LIBS=ON \
-                       -DCMAKE_BUILD_TYPE=Release"
+                       -DCMAKE_BUILD_TYPE=Release \
+                       -DA2X_EXECUTABLE=A2X_EXECUTABLE-NOTFOUND"
 
 pre_make_target() {
   find ${PKG_BUILD} -name flags.make -exec sed -i "s:isystem :I:g" \{} \;
