@@ -1,0 +1,26 @@
+--- a/linux-user/syscall.c	2026-06-26 20:11:00.092119304 +0800
++++ b/linux-user/syscall.c	2026-06-26 20:11:00.093077230 +0800
+@@ -36,6 +36,7 @@
+ #include <sys/resource.h>
+ #include <sys/swap.h>
+ #include <linux/capability.h>
++#include <linux/fs.h>
+ #include <sched.h>
+ #include <sys/timex.h>
+ #include <sys/socket.h>
+@@ -126,6 +127,7 @@
+ #define FIBMAP     _IO(0x00,1)
+ #define FIGETBSZ   _IO(0x00,2)
+ 
++#ifndef FICLONERANGE
+ struct file_clone_range {
+         __s64 src_fd;
+         __u64 src_offset;
+@@ -135,6 +137,7 @@
+ 
+ #define FICLONE         _IOW(0x94, 9, int)
+ #define FICLONERANGE    _IOW(0x94, 13, struct file_clone_range)
++#endif
+ 
+ #else
+ #include <linux/fs.h>
