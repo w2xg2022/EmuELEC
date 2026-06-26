@@ -13,5 +13,10 @@ PKG_TOOLCHAIN="autotools"
 PKG_BUILD_FLAGS="-sysroot"
 
 make_target() {
-  make ASCIIDOC=true ${PKG_MAKE_OPTS_TARGET}
+  make evtest ${PKG_MAKE_OPTS_TARGET}
+}
+
+makeinstall_target() {
+  mkdir -p ${INSTALL}/usr/bin
+  cp -a evtest ${INSTALL}/usr/bin/
 }
