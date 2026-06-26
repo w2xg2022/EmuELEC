@@ -1,0 +1,10 @@
+--- a/configure.ac	2020-02-18 15:04:45.000000000 +0800
++++ b/configure.ac	2026-06-26 21:50:43.167754978 +0800
+@@ -1173,7 +1173,6 @@
+ avahi-autoipd/Makefile
+ avahi-ui/Makefile
+ avahi-libevent/Makefile
+-po/Makefile.in
+ ])
+ AC_OUTPUT
+ 
