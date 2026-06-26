@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       models:
-        description: '要編譯的型號清單(空白分隔)，留空則用 repo variable MODELS'
+        description: '要编译的型号列表(空格分隔)，留空则用 repo variable MODELS'
         required: false
         default: ''
   schedule:
-    # 每月 1 號 03:00 UTC 自動全部型號重編一次(跟上游同步)
+    # 每月1号 03:00 UTC 自动全部型号重新编译一次(跟上游同步)
     - cron: '0 3 1 * *'
 
 permissions:
@@ -71,7 +71,8 @@ jobs:
             libasound2-dev libgl1-mesa-dev build-essential libboost-all-dev cmake \
             fonts-droid-fallback libvlc-dev libvlccore-dev vlc-bin texinfo premake4 \
             golang libssl-dev curl patchelf xmlstarlet default-jre xsltproc \
-            libvpx-dev rdfind tzdata xfonts-utils lzop
+            libvpx-dev rdfind tzdata xfonts-utils lzop \
+            libparse-yapp-perl gperf libxml-parser-perl patchutils
 
       - name: Build (${{ matrix.model }})
         run: |
@@ -110,5 +111,5 @@ jobs:
           name: "EmuELEC ${{ matrix.model }} (${{ github.run_id }})"
           files: out/*
           body: |
-            自動雲編譯：${{ env.PROJECT }}/${{ env.DEVICE }} SUBDEVICE=${{ matrix.model }}
-            觸發方式：${{ github.event_name }}
+            自动云编译：${{ env.PROJECT }}/${{ env.DEVICE }} SUBDEVICE=${{ matrix.model }}
+            触发方式：${{ github.event_name }}
