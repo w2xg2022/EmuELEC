@@ -4,12 +4,12 @@
 
 ## 选型策略：三级志愿
 
-站在为电视盒子/开发板适配怀旧游戏系统的角度，按照长期玩机经验按以下顺序逐级尝试：
+归纳长期玩机经验，建议按以下顺序逐级尝试：
 
 1. 🥇 **Armbian + ES4A**（见 [w2xg2022/armbian](https://github.com/w2xg2022/armbian)、[w2xg2022/es4armbian-1key](https://github.com/w2xg2022/es4armbian-1key)）
    主线内核 Armbian，跑 EmulationStation 前端。最通用——Armbian 本身很流行，还能当 Server 用，优先选这条路。
 2. 🥈 **EmuELEC（本仓库）**
-   当主线内核对某型号支持还不成熟（不稳定、缺驱动，常见于厂商自家 WiFi 芯片-uwe5621ds）时，改用 Amlogic 厂商内核（与 CoreELEC 同源），换取稳定性。
+   当主线内核对某型号支持还不成熟（不稳定、缺驱动，常见于厂商自家 WiFi 芯片-UWE5621DS）时，改用 Amlogic 厂商内核（与 CoreELEC 同源），换取稳定性。
 3. 🥉 **Android + Pegasus**
    连 EmuELEC 都跑不起来的型号（如 HiSilicon 芯片、锁机、RK3288等纯 32 位老芯片），保留原厂 Android 系统，装 Pegasus 前端做模拟器启动器。
 
@@ -42,7 +42,13 @@ PROJECT=Amlogic-ce DEVICE=Amlogic-no SUBDEVICE=X98mini IMAGE_SUFFIX=X98mini ARCH
 2. 把型号名加进 repo variable `MODELS`（多个型号用空格分隔）。
 3. 手动触发一次 workflow 验证编译是否成功，再观察自动月编译是否正常。
 
+## 参考仓库清单
 
-However, you have permission to include/modify them in your forks/projects as long as they are fully open source and freely available (i.e. not under a bunch of "click on this sponsored ad to get the link!" buttons) and do not violate any copyright laws, even if you receive donations for such a project (we are not against donations for honest people!), we just ask that you give us the appropriate credits and if possible a link to this repo.
-
-Happy retrogaming!
+| 仓库 | 用途 |
+|---|---|
+| [w2xg2022/armbian](https://github.com/w2xg2022/armbian) | 第一志愿：Armbian 固件打包（fork 自 ophub/amlogic-s9xxx-armbian） |
+| [w2xg2022/armbian-kernel](https://github.com/w2xg2022/armbian-kernel) | 第一志愿：Armbian 主线内核源码（fork 自 ophub/linux-6.18.y） |
+| [w2xg2022/es4armbian-1key](https://github.com/w2xg2022/es4armbian-1key) | 一键把 Armbian 变复古游戏机的安装脚本 |
+| [w2xg2022/fnnas](https://github.com/w2xg2022/fnnas) | FnOS/飞牛NAS 固件（与 armbian 共用 dtb/板级定义） |
+| [EmuELEC/EmuELEC](https://github.com/EmuELEC/EmuELEC) | 本仓库的上游项目 |
+| [CoreELEC/CoreELEC](https://github.com/CoreELEC/CoreELEC) | Amlogic 厂商内核来源（本仓库的 Amlogic-ce/Amlogic-no 项目直接拉取其 linux-amlogic 内核） |
