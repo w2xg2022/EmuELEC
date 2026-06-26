@@ -11,6 +11,9 @@ on:
     # 每月 1 號 03:00 UTC 自動全部型號重編一次(跟上游同步)
     - cron: '0 3 1 * *'
 
+permissions:
+  contents: write
+
 env:
   PROJECT: Amlogic-ce
   DEVICE: Amlogic-no
@@ -73,6 +76,7 @@ jobs:
       - name: Build (${{ matrix.model }})
         run: |
           PROJECT=${{ env.PROJECT }} DEVICE=${{ env.DEVICE }} SUBDEVICE=${{ matrix.model }} \
+          IMAGE_SUFFIX=${{ matrix.model }} \
           ARCH=${{ env.ARCH }} DISTRO=${{ env.DISTRO }} make image 2>&1 | tee build-${{ matrix.model }}.log
 
       - name: Collect artifacts
