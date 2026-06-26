@@ -11,3 +11,7 @@ PKG_DEPENDS_TARGET="toolchain libxml2"
 PKG_LONGDESC="A simple tool for input event debugging."
 PKG_TOOLCHAIN="autotools"
 PKG_BUILD_FLAGS="-sysroot"
+
+make_target() {
+  make ASCIIDOC=true ${PKG_MAKE_OPTS_TARGET}
+}
