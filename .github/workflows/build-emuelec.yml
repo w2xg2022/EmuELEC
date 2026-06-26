@@ -76,6 +76,7 @@ jobs:
 
       - name: Build (${{ matrix.model }})
         run: |
+          set -o pipefail
           PROJECT=${{ env.PROJECT }} DEVICE=${{ env.DEVICE }} SUBDEVICE=${{ matrix.model }} \
           IMAGE_SUFFIX=${{ matrix.model }} \
           ARCH=${{ env.ARCH }} DISTRO=${{ env.DISTRO }} make image 2>&1 | tee build-${{ matrix.model }}.log
