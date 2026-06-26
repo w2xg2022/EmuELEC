@@ -2,7 +2,7 @@
 # Copyright (C) 2016-present Team LibreELEC (https://libreelec.tv)
 
 PKG_NAME="evtest"
-PKG_VERSION="7580b4477c296274025cd6fb2a6345a7732be6eb"
+PKG_VERSION="7cfe0a95e0db6043c6445cb9120215902c3b9b74"
 PKG_SHA256="a224abeb783561193660999b0c986216d691cb271b5ec3af88c6bb37b55ff51c"
 PKG_LICENSE="GPL"
 PKG_SITE="http://cgit.freedesktop.org/evtest/"
