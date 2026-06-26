@@ -1,0 +1,110 @@
+name: Build EmuELEC
+
+on:
+  workflow_dispatch:
+    inputs:
+      models:
+        description: '要編譯的型號清單(空白分隔)，留空則用 repo variable MODELS'
+        required: false
+        default: ''
+  schedule:
+    # 每月 1 號 03:00 UTC 自動全部型號重編一次(跟上游同步)
+    - cron: '0 3 1 * *'
+
+env:
+  PROJECT: Amlogic-ce
+  DEVICE: Amlogic-no
+  ARCH: aarch64
+  DISTRO: EmuELEC
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        run: |
+          MODELS="${{ github.event.inputs.models }}"
+          if [ -z "$MODELS" ]; then
+            MODELS="${{ vars.MODELS }}"
+          fi
+          if [ -z "$MODELS" ]; then
+            MODELS="X98mini"
+          fi
+          JSON=$(printf '%s\n' $MODELS | jq -R . | jq -s -c .)
+          echo "matrix=$JSON" >> "$GITHUB_OUTPUT"
+          echo "Models to build: $MODELS"
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        model: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    steps:
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@v10
+        with:
+          root-reserve-mb: 4096
+          swap-size-mb: 2048
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            gcc make git unzip wget xz-utils libsdl2-dev libsdl2-mixer-dev \
+            libfreeimage-dev libfreetype6-dev libcurl4-openssl-dev rapidjson-dev \
+            libasound2-dev libgl1-mesa-dev build-essential libboost-all-dev cmake \
+            fonts-droid-fallback libvlc-dev libvlccore-dev vlc-bin texinfo premake4 \
+            golang libssl-dev curl patchelf xmlstarlet default-jre xsltproc \
+            libvpx-dev rdfind tzdata xfonts-utils lzop
+
+      - name: Build (${{ matrix.model }})
+        run: |
+          PROJECT=${{ env.PROJECT }} DEVICE=${{ env.DEVICE }} SUBDEVICE=${{ matrix.model }} \
+          ARCH=${{ env.ARCH }} DISTRO=${{ env.DISTRO }} make image 2>&1 | tee build-${{ matrix.model }}.log
+
+      - name: Collect artifacts
+        id: collect
+        run: |
+          mkdir -p out
+          find . -maxdepth 3 -type d -name "target" -exec sh -c 'cp -v "$1"/*.img.gz out/ 2>/dev/null; cp -v "$1"/*.img.xz out/ 2>/dev/null; cp -v "$1"/*.tar out/ 2>/dev/null' _ {} \;
+          find . -maxdepth 6 -iname "*${{ env.DISTRO }}*${{ matrix.model }}*" \( -iname "*.img.gz" -o -iname "*.img.xz" -o -iname "*.tar" \) -exec cp -v {} out/ \; 2>/dev/null || true
+          ls -la out/ || echo "no artifacts found, check build log"
+
+      - name: Upload build log (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ matrix.model }}
+          path: build-${{ matrix.model }}.log
+          retention-days: 14
+
+      - name: Upload firmware artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: EmuELEC-${{ matrix.model }}
+          path: out/*
+          if-no-files-found: warn
+
+      - name: Create release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ matrix.model }}-${{ github.run_id }}
+          name: "EmuELEC ${{ matrix.model }} (${{ github.run_id }})"
+          files: out/*
+          body: |
+            自動雲編譯：${{ env.PROJECT }}/${{ env.DEVICE }} SUBDEVICE=${{ matrix.model }}
+            觸發方式：${{ github.event_name }}
