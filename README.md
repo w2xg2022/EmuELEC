@@ -4,7 +4,7 @@
 
 ## 选型策略：三级志愿
 
-归纳长期玩机经验，建议按以下顺序逐级尝试：
+站在为电视盒子/开发板适配怀旧游戏系统的角度，归纳长期玩机经验，建议按以下顺序逐级尝试：
 
 1. 🥇 **Armbian + ES4A**（见 [w2xg2022/armbian](https://github.com/w2xg2022/armbian)、[w2xg2022/es4armbian-1key](https://github.com/w2xg2022/es4armbian-1key)）
    主线内核 Armbian，跑 EmulationStation 前端。最通用——Armbian 本身很流行，还能当 Server 用，优先选这条路。
@@ -49,6 +49,5 @@ PROJECT=Amlogic-ce DEVICE=Amlogic-no SUBDEVICE=X98mini IMAGE_SUFFIX=X98mini ARCH
 | [w2xg2022/armbian](https://github.com/w2xg2022/armbian) | 第一志愿：Armbian 固件打包（fork 自 ophub/amlogic-s9xxx-armbian） |
 | [w2xg2022/armbian-kernel](https://github.com/w2xg2022/armbian-kernel) | 第一志愿：Armbian 主线内核源码（fork 自 ophub/linux-6.18.y） |
 | [w2xg2022/es4armbian-1key](https://github.com/w2xg2022/es4armbian-1key) | 一键把 Armbian 变复古游戏机的安装脚本 |
-| [w2xg2022/fnnas](https://github.com/w2xg2022/fnnas) | FnOS/飞牛NAS 固件（与 armbian 共用 dtb/板级定义） |
 | [EmuELEC/EmuELEC](https://github.com/EmuELEC/EmuELEC) | 本仓库的上游项目 |
 | [CoreELEC/CoreELEC](https://github.com/CoreELEC/CoreELEC) | Amlogic 厂商内核来源（本仓库的 Amlogic-ce/Amlogic-no 项目直接拉取其 linux-amlogic 内核） |
