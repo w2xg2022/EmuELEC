@@ -1,0 +1,47 @@
+################################################################################
+#      This file is part of OpenELEC - http://www.openelec.tv
+#      Copyright (C) 2009-2012 Stephan Raue (stephan@openelec.tv)
+#
+#  This Program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2, or (at your option)
+#  any later version.
+#
+#  This Program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with OpenELEC.tv; see the file COPYING.  If not, write to
+#  the Free Software Foundation, 51 Franklin Street, Suite 500, Boston, MA 02110, USA.
+#  http://www.gnu.org/copyleft/gpl.html
+################################################################################
+
+PKG_NAME="fceumm"
+#PKG_VERSION="449db5de6b56e9d44fc685e1b38399f0b233bd28"
+PKG_VERSION="5cd4a43e16a7f3cd35628d481c347a0a98cfdfa2"
+#PKG_SHA256="5cac184772421ec3cffa19f50737a5fdd481089007d21d79b3e2760f94c8fa87"
+PKG_REV="1"
+PKG_ARCH="any"
+PKG_LICENSE="GPLv2"
+PKG_SITE="https://github.com/libretro/libretro-fceumm"
+PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
+PKG_DEPENDS_TARGET="toolchain"
+PKG_PRIORITY="optional"
+PKG_SECTION="libretro"
+PKG_SHORTDESC="Port of FCEUmm / FCEUX to Libretro."
+PKG_LONGDESC="FCEUX is a Nintendo Entertainment System (NES), Famicom, and Famicom Disk System (FDS) emulator."
+
+PKG_IS_ADDON="no"
+PKG_TOOLCHAIN="make"
+PKG_AUTORECONF="no"
+
+make_target() {
+  make -f Makefile.libretro
+}
+
+makeinstall_target() {
+  mkdir -p ${INSTALL}/usr/lib/libretro
+  cp fceumm_libretro.so ${INSTALL}/usr/lib/libretro/
+}

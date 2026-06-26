@@ -1,0 +1,2 @@
+1
+- jellyfin: update to 10.8.10

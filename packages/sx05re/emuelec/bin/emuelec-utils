@@ -1,0 +1,572 @@
+#!/bin/bash
+
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2020-present Shanti Gilbert (https://github.com/shantigilbert)
+
+# Source predefined functions and variables
+. /etc/profile
+
+function set_rotation()
+{
+  local rotate=$1
+  local emulator=$2
+
+  if [[ "${emulator}" == "libretro" ]]; then
+		set_ra_setting "video_rotation" "${rotate}"
+		return		
+  fi
+
+  if [[ "${emulator}" == "retrorun" ]]; then
+		if [[ "${rotate}" == "0" ]]; then
+			set_rr_setting "retrorun_tate_mode" "disabled"
+			set_rr_setting "retrorun_swap_sticks" "false"
+			echo " "
+		else
+			set_rr_setting "retrorun_tate_mode" "enabled"
+			set_rr_setting "retrorun_swap_sticks" "true"
+			echo " -z "
+		fi
+		return
+	fi
+}
+
+function rotation_output() {
+    local emulator=$1
+    local core=$2
+
+    if [[ "${emulator}" == "libretro" ]]; then
+        echo "90 Degrees,180 Degrees,270 Degrees"
+    fi
+
+    if [[ "${emulator}" == "retrorun" ]]; then
+        echo "Tate Mode"
+    fi
+}
+
+function killall_midi()
+{
+	pkill -9 timidity
+  pkill -9 mt32d
+  pkill -9 fluidsynth
+	
+}
+
+function set_midi_source()
+{
+  local midi_source=$1
+  local midi_emulator=$2
+
+  killall_midi
+
+  [[ "${midi_emulator}" == "retrorun" ]] && return
+
+  local midi_output=OFF
+  
+  case ${midi_source} in
+    fluidsynth)
+      fluidsynth -is /storage/roms/bios/sc/SC-55.sf2 &
+      sleep 6
+      midi_output=$(cat /proc/asound/seq/clients | grep "Port   0 : \"S" | cut -d'"' -f2)
+      ;;
+    timidity)
+      timidity -iA --module 1 &
+      midi_output="TiMidity port 0"
+			;;
+    cm32l)
+      mt32d -o 1 -i 24 -f /roms/bios &
+      midi_output=Standard
+      ;;
+    mt32)
+      mt32d -o 2 -i 24 -f /roms/bios &
+      midi_output=Standard
+			;;
+esac
+
+  if [[ "${midi_emulator}" == "libretro" ]]; then
+    set_ra_setting "midi_output" "${midi_output}"
+  fi
+}
+
+function get_filenames_no_ext() {
+	local FN=($( ls -1 $1 | sed -e 's/\.[^.]*$//' ))
+	IFS=","
+	echo "${FN[*]}"
+}
+
+function test() {
+    echo "success"
+    exit 1
+}
+
+function error() {
+# Displays emuelec.log if there was an error.
+    text_viewer /emuelec/logs/emuelec.log -w -t "Error! ${2}" -f 24
+	show_splash.sh exit
+}
+
+function setauddev() {
+#set audio device out according to emuelec.conf
+    AUDIO_DEVICE="${1}"
+    [ -z "${AUDIO_DEVICE}" ] && AUDIO_DEVICE="$(get_ee_setting ee_audio_device)"
+    [[ "${AUDIO_DEVICE}" = "auto" || -z "${AUDIO_DEVICE}" ]] && AUDIO_DEVICE="0,0"
+    sed -i "s|pcm \"hw:.*|pcm \"hw:${AUDIO_DEVICE}\"|" /storage/.config/asound.conf
+}
+
+function audio() {
+    setauddev;
+    # This has to be expanded to check for new GLX devices running on Amlogic-ng,
+	# but right now its mostly used on ES to change audio to alsa before launching or else ES hangs on GXL devices.
+   if [[ "$1" == "alsa" ]]; then
+		set_audio alsa
+   elif [[ "$1" == "pulse"* ]]; then
+		set_audio pulseaudio
+   else
+		set_audio default
+   fi
+}
+
+function clearconfig() {
+# This function resets configurations based on argument 1
+	case "${1}" in
+	"EMUS")
+        unmount_all
+		systemctl stop emustation
+		ee_backup backup no
+		find /storage -mindepth 1 \( ! -regex '^/storage/.config/emuelec/themes.*' -a ! -regex '^/storage/.config/emulationstation/themes.*' -a ! -regex '^/storage/.update.*' -a ! -regex '^/storage/download.*' -a ! -regex '^/storage/roms.*' -a ! -regex '^/storage/.cache/bluetooth.*' \) -delete
+		mkdir /storage/.config/
+		sync
+        small-cores enable
+		systemctl reboot
+		;;
+	"retroarch")
+		rm -f /storage/.config/retroarch/retroarch.cfg
+		cp -rf /usr/config/retroarch/retroarch.cfg /storage/.config/retroarch/retroarch.cfg
+	;;
+	"ALL")
+        unmount_all
+		systemctl stop emustation
+		find /storage -mindepth 1 \( ! -regex '^/storage/.config/emuelec/themes.*' -a ! -regex '^/storage/.update.*' -a ! -regex '^/storage/roms.*' -a ! -regex '^/storage/.cache/bluetooth.*' \) -delete
+		mkdir /storage/.config/
+		sync
+        small-cores enable
+		systemctl reboot
+	;;
+	esac
+}
+
+function ee_backup() {
+# Creates a backup of current configurations
+    BACKUPDIR="/storage/roms/backup"
+    BACKUPTAR="ee_backup_config.tar.gz"
+    BACKUPFILE="${BACKUPDIR}/${BACKUPTAR}"
+
+    mkdir -p "${BACKUPDIR}"
+
+	case "${1}" in
+	"restore")
+		[ -z "${2}" ] && systemctl stop emustation
+        cd /
+		tar xvf "${BACKUPFILE}"
+		sync
+        sleep 3
+        RESTOREDATE="$(date +'%m-%d-%Y')_$(uuidgen)"
+        # Move the backup file instead of deleting it
+        mv "${BACKUPFILE}" "${BACKUPDIR}/restored_${RESTOREDATE}_${BACKUPTAR}" &
+		[ -z "${2}" ] && systemctl start emustation
+	;;
+	"backup")
+		[ -f "${BACKUPFILE}" ] && rm "${BACKUPFILE}"
+		[ -z "${2}" ] && systemctl stop emustation
+        tar -zcvf "${BACKUPFILE}" /storage/.local/share/VVVVVV/* \
+					  /storage/.cache/bluetooth/* \
+					  /storage/.cache/timezone \
+					  /storage/.cache/hostname \
+					  /storage/.config/scummvm/* \
+					  /storage/.config/emuelec/configs/* \
+					  /storage/.emulationstation/es_*.cfg \
+					  /storage/.emulationstation/themesettings \
+					  /tmp/joypads/* \
+					  /storage/.config/retroarch/*.cfg \
+					  /storage/.config/ppsspp/* \
+					  /storage/.config/retroarch/config/* \
+					  /storage/.config/supertux* \
+					  /storage/.emulationstation/scripts/drastic/config/* \
+					  /storage/.emulationstation/scripts/drastic/backup/* \
+					  /storage/.emulationstation/scripts/drastic/savestates/* \
+					  /storage/.config/emuelec/bin/pico-8/* \
+        sync
+		sleep 3
+		[ -z "${2}" ] && systemctl start emustation
+	;;
+    esac
+}
+
+function ee_cloud_backup() {
+# Creates a cloud backup of current configurations using rclone
+    RCLONECONF="/emuelec/configs/rclone/rclone.conf"
+    EESYNCCFG="/emuelec/configs/rclone/ee_cloud_sync.cfg"
+    
+    if [ -e "${EESYNCCFG}" ]; then
+        . "${EESYNCCFG}"
+    fi
+    
+    [ -z "${EE_SYNC_REMOTE}" ] && EE_SYNC_REMOTE="EmuELEC_Remote"
+    [ -z "${EE_SYNC_PATH}" ] && EE_SYNC_PATH="EmuELEC_Backup"
+
+    [ -z "${2}" ] && systemctl stop emustation
+    
+    # We need to check if rclone.conf exists and its configured correctly, else show error
+    if [ -e "${RCLONECONF}" ]; then
+        # in case this file was created in windows, we need to convert it
+        dos2unix ${RCLONECONF}
+        if ! grep -Fxq "[${EE_SYNC_REMOTE}]" ${RCLONECONF}; then
+            text_viewer -e -w -t "rclone.conf error!" -f 24 -m "rclone.conf exist but it does not contain a remote named ${EE_SYNC_REMOTE}, please read https://rclone.org/remote_setup/ name your remote ${EE_SYNC_REMOTE} and copy resulting rclone.conf to /emuelec/configs/rclone/"
+            systemctl start emustation
+            exit 1;
+        fi
+    else
+        text_viewer -e -w -t "rclone.conf does not exist!" -f 24 -m "rclone.conf does not exist and its required for cloud sync to function! please read https://rclone.org/remote_setup/ and copy resulting rclone.conf to /emuelec/configs/rclone/"
+        systemctl start emustation
+        exit 1;
+    fi
+        
+   	case "${1}" in 
+    "backup")
+        # we first create a regular backup
+        echo "emuelec-utils ee_backup backup no" > /tmp/cloud.sh
+        # We sync to EmuELEC_Remote specified in /emuelec/configs/rclone/rclone.conf to EmuELEC_Backup in the remote server
+        echo "rclone sync /storage/roms/ ${EE_SYNC_REMOTE}:/${EE_SYNC_PATH}/ --filter-from /emuelec/configs/rclone/emuelec-cloud-filter.cfg -P -v --config ${RCLONECONF} 2>&1 | tee /emuelec/logs/cloud-backup.log" >> /tmp/cloud.sh
+    ;;
+    "restore")
+        # We first sync to /storage/roms from EmuELEC_Remote specified in /emuelec/configs/rclone/rclone.conf
+        echo "rclone sync ${EE_SYNC_REMOTE}:/${EE_SYNC_PATH}/ /storage/roms/ --filter-from /emuelec/configs/rclone/emuelec-cloud-filter.cfg -P -v --config ${RCLONECONF} 2>&1 | tee /emuelec/logs/cloud-backup.log" > /tmp/cloud.sh
+        # We then restore the backup file (if it exists)
+        echo "emuelec-utils ee_backup restore no" >> /tmp/cloud.sh
+    ;;
+	esac
+    echo "echo \"Done!...Press 'Select' or choose 'Close' to continue!\"" >> /tmp/cloud.sh    
+    chmod +x /tmp/cloud.sh
+    text_viewer -s /tmp/cloud.sh -t "EmuELEC cloud sync, please wait!..."
+    rm /tmp/cloud.sh > /dev/null 2>&1
+    
+    if [ "${1}" == "restore" ]; then 
+        systemctl reboot
+    else
+        [ -z "${2}" ] && systemctl start emustation
+    fi
+}
+
+function filemanager() {
+# runs the file manager script, might be outdated. 
+	/usr/bin/scripts/setup/file_manager.sh
+}
+
+function getshaders() {
+# Returns a list of available shaders, mostly used in Emulationstation.
+	find /tmp/shaders -name '*.glslp' -print0 |
+		while IFS= read -r -d '' line; do
+		echo ${line#/tmp/shaders/},
+	done
+}
+
+function getip() {
+# returns current IP Address
+IP="$(ifconfig wlan0 | grep 'inet addr' | cut -d: -f2 | awk '{print $1}')"
+
+  if [ -z "$IP" ]; then
+	 IP="$(ifconfig eth0 | grep 'inet addr' | cut -d: -f2 | awk '{print $1}')"
+  fi
+
+ if [ -z "$IP" ]; then
+	echo "No Internet"
+ else
+	echo "${IP}"
+	echo "${IP}" > /emuelec/ip.txt
+ fi
+}
+
+function dimensions() {
+
+	DIMENSIONS=()
+
+	local FILEPATH="/emuelec/configs/dimensions.conf"
+
+	[[ ! -f "$FILEPATH" ]] && cp /usr/config/emuelec/configs/dimensions.conf /emuelec/configs
+
+  # Screen supported dimensions
+  SCREEN_DIMENSIONS=`/usr/bin/cat "$FILEPATH"`
+  for SD in $SCREEN_DIMENSIONS
+  do
+    DIMENSIONS+=($SD)
+  done
+
+  DIMENSIONS=($(printf "%s\n" "${DIMENSIONS[@]}" | sort -u))
+
+	IFS=","
+	echo "${DIMENSIONS[*]}"
+}
+
+function midi_output() {
+	local emulator=$1
+	local core=$2
+
+	echo "fluidsynth,mt32,cm32l,timidity"
+}
+
+function resolutions() {
+# Returns a list of supported resolutions depending on device
+	RESOLUTIONS=()
+
+  if [ -f "/storage/LEGACY_RESOLUTIONS" ]; then
+    # N2 supported resolutions source : https://wiki.odroid.com/odroid-n2/application_note/software/set_display_mode
+    N2_SUPPORTED_RESOLUTIONS="480x320p60hz 640x480p60hz 720x480p60hz 720x576p50hz 800x480p60hz 1024x600p60hz 1024x768p60hz 1280x1024p60hz 1280x720p50hz 1280x720p60hz 1280x800p60hz 1360x768p60hz 1440x900p60hz 1600x1200p60hz 1600x900p60hz 1680x1050p60hz 1920x1080p24hz 1920x1080p30hz 1920x1080p50hz 1920x1080p60hz 1920x1200p60hz 2560x1080p60hz 2560x1440p60hz 2560x1600p60hz 3440x1440p60hz 3840x2160p24hz 3840x2160p25hz 3840x2160p30hz 3840x2160p50hz 3840x2160p60hz"
+
+    # Screen supported resolutions
+    SCREEN_SUPPORTED_RESOLUTIONS=`/usr/bin/cat /sys/class/amhdmitx/amhdmitx0/rawedid | /usr/bin/edid-decode |/usr/bin/grep "@" | sed -E "s| {0,9}VIC {0,9}[0-9]{1,2}||" | /usr/bin/awk '{print $1}' | /usr/bin/sed  's/@/p/g'|/usr/bin/tr '[:upper:]' '[:lower:]'`
+
+    for N2SP in $N2_SUPPORTED_RESOLUTIONS
+    do
+      for SSR in $SCREEN_SUPPORTED_RESOLUTIONS
+      do
+        if [ "$N2SP" = "$SSR" ]
+        then
+          RESOLUTIONS+=($N2SP)
+        fi
+      done
+    done
+  fi
+
+  if [[ "$EE_PROJECT" == "Rockchip" ]]; then
+    SCREEN_SUPPORTED_RESOLUTIONS=`/usr/bin/cat /sys/class/display/display0.HDMI/modes | sort -u`
+    for SSR in $SCREEN_SUPPORTED_RESOLUTIONS
+    do
+      RESOLUTIONS+=($SSR)
+    done
+  else
+    # Screen supported resolutions
+    SCREEN_SUPPORTED_RESOLUTIONS=`/usr/bin/cat /sys/class/display/cap | sed '/smpte/d' | sed '/pal/d' | sed '/ntsc/d' | sed 's/\*//' | grep -E '[0-9x]+[pi][56]0hz|cvbs'`
+    for SSR in $SCREEN_SUPPORTED_RESOLUTIONS
+    do
+      RESOLUTIONS+=($SSR)
+    done
+  fi
+
+  if [ "$EE_DEVICE" == "OdroidGoAdvance" ]; then
+    RESOLUTIONS+=("480x320p60hz")
+  fi
+
+	[[ ! ${RESOLUTIONS[@]} == *"640x480p60hz"* ]] && RESOLUTIONS+=("640x480p60hz")
+	[[ ! ${RESOLUTIONS[@]} == *"480i60hz"* ]] && RESOLUTIONS+=("480i60hz")
+
+	local FILEPATH="/emuelec/configs/resolutions_amlogic.conf"
+	if [[ "$DEVICE" == "Rockchip" ]]; then
+		FILEPATH="/emuelec/configs/resolutions_rockchip.conf"
+	fi
+
+	if [[ -f "$FILEPATH" ]]; then
+	  SCREEN_SUPPORTED_RESOLUTIONS=`/usr/bin/cat "$FILEPATH"`
+	  for SSR in $SCREEN_SUPPORTED_RESOLUTIONS
+	  do
+	    RESOLUTIONS+=($SSR)
+	  done
+	fi
+
+  RESOLUTIONS=($(printf "%s\n" "${RESOLUTIONS[@]}" | sort -u))
+
+	IFS=","
+	echo "${RESOLUTIONS[*]}"
+}
+
+function current_timezone() {
+# Returns the current timezone
+	readlink -f /etc/localtime | sed 's;/usr/share/zoneinfo/;;'
+}
+
+function timezones() {
+# Returns a list of timezones, used in ES
+	cat /usr/share/zoneinfo/zone1970.tab | grep -v "^#" | awk '{ print $3"," }' | sort -u
+}
+
+function small-cores() {
+	SCF=$(get_ee_setting ee_scf)
+	[ "${SCF}" != "1" ] && return 0
+ 	
+# Switch the small cores on the N2 on and off, we mostly have them off as the small cores are slower.
+    if grep -q "g12b" /proc/device-tree/compatible; then
+        case "$1" in
+        "enable")
+            echo "1" > /sys/devices/system/cpu/cpu0/online
+            echo "1" > /sys/devices/system/cpu/cpu1/online
+        ;;
+        "disable")
+            echo "0" > /sys/devices/system/cpu/cpu0/online
+            echo "0" > /sys/devices/system/cpu/cpu1/online
+        ;;
+        esac
+    fi
+}
+
+function unmount_all () {
+    if /usr/bin/busybox mountpoint -q /emuelec/themes ; then
+        umount /emuelec/themes > /dev/null 2>&1
+    fi
+
+    if /usr/bin/busybox mountpoint -q /storage/roms ; then
+        umount /storage/roms > /dev/null 2>&1
+    fi
+    
+    if /usr/bin/busybox mountpoint -q /storage/roms/ports_scripts ; then
+        umount /storage/roms/ports_scripts > /dev/null 2>&1
+    fi
+    
+}
+
+function createMultidisc() {
+# Creates a multidisc m3u file, used in ES. 
+  local ROMNAME="$1"
+
+  local BASEROMNAME="${ROMNAME##*/}"
+  local BASEFOLDER="$(dirname "${ROMNAME}")"
+  local ROMEXT="${BASEROMNAME##*.}"
+  local ROMNAME_NOEXT="${BASEROMNAME%.*}"
+
+  [[ "$ROMEXT" == "m3u" ]] && echo -e "\n" && return
+
+  if [[ "${ROMNAME_NOEXT,,}" =~ ^.*disc[[:space:]]*1.*$ ]]; then
+      local M3U_FILE=$(echo "${ROMNAME_NOEXT}" | sed -nE "s/(.*)(disc *)1(.*)/\1 DISCS \3/pi")
+      M3U_FILE=$(echo "${BASEFOLDER}/${M3U_FILE}.m3u")
+      [[ -f "${M3U_FILE}" ]] && echo -e "\n" && return
+
+      touch "${M3U_FILE}"
+      local HAS_SEQ=0
+      local REGEX=$( echo "${ROMNAME_NOEXT}" | sed -nE "s/(.*)(disc*)\s*[0-9](.*)/\1\2\3/pi" \
+        | sed -e 's/\[[^][]*\]//g' | sed -e 's/([^()]*)//g' | sed -e 's/\s+/ /' \
+        | awk '{$1=$1};1' )
+      REGEX=$( echo ".*${REGEX}.*" )
+      local FILES=$( ls "${BASEFOLDER}/"* | grep ".${ROMEXT}" | grep -E "${REGEX}" | sort )
+      IFS=$'\n'
+      local ITER=0
+      for item in $FILES
+      do
+        echo "${item}" >> "$M3U_FILE"
+        ((ITER++))
+      done
+      if [[ "$ITER" -gt "1" ]]; then
+        echo -e "${M3U_FILE}"
+      else
+        rm "${M3U_FILE}"
+      fi
+  fi
+  echo -e "\n"
+}
+
+function blank_buffer() {
+# Clears screen buffer
+  # Blank the buffer.
+  dd if=/dev/zero of=/dev/fb0 bs=256K conv=sync,noerror,notrunc > /dev/null 2>&1
+  dd if=/dev/zero of=/dev/fb1 bs=256K conv=sync,noerror,notrunc > /dev/null 2>&1
+}
+
+function init_app_video() {
+	local PLATFORM=$1
+	local ROMNAME=$2
+	local BASEROMNAME=${ROMNAME##*/}
+
+	[[ -f "/tmp/EE_LASTVIDEO" ]] && return
+
+  blank_buffer
+
+	if [[ "${PLATFORM}" == "ports" ]] && [[ "${BASEROMNAME}" == "PortMaster.sh" ]]; then
+		return
+	fi
+	
+  if [[ "${PLATFORM}" == "setup" ]]; then 
+		return
+	fi
+
+	echo "$(cat /sys/class/display/mode)" > /tmp/EE_LASTVIDEO
+	local VIDEO_EMU=$(get_ee_setting nativevideo "${PLATFORM}" "${BASEROMNAME}")
+	[[ -z "$VIDEO_EMU" ]] && VIDEO_EMU=$(cat /tmp/EE_LASTVIDEO)
+
+	# Set the display video to that of the emulator setting.
+	[ ! -z "${VIDEO_EMU}" ] && ${TBASH} setres.sh "${VIDEO_EMU}" "${PLATFORM}" "${BASEROMNAME}" # set display
+
+	# Show splash screen if enabled
+	local SPL=$(get_ee_setting ee_splash.enabled)
+	[ "${SPL}" -eq "1" ] && ${TBASH} show_splash.sh gameloading "${PLATFORM}" "${ROMNAME}"
+
+  if [[ "${PLATFORM}" == "ports" ]]; then
+    fbfix $( emuelec-utils getmainfb )
+  fi
+}
+
+function end_app_video() {
+	local PLATFORM=$1
+	local ROMNAME=$2
+	local BASEROMNAME=${ROMNAME##*/}
+
+  [[ ! -f "/tmp/EE_LASTVIDEO" ]] && return
+
+	if [[ "${PLATFORM}" == "ports" ]] && [[ "${BASEROMNAME}" == "PortMaster.sh" ]]; then 
+		return
+	fi
+	
+	if [[ "${PLATFORM}" == "setup" ]]; then 
+		return
+	fi
+
+  blank_buffer
+
+	local LAST_VIDEO="$(cat /tmp/EE_LASTVIDEO)"
+
+	# Return to default mode
+	${TBASH} setres.sh ${LAST_VIDEO}
+
+	# Show exit splash
+	${TBASH} show_splash.sh exit
+
+	blank_buffer
+
+	[[ -f "/tmp/EE_LASTVIDEO" ]] && rm /tmp/EE_LASTVIDEO
+}
+
+function getmainfb() {
+  local max_area=0
+  local max_fb=0
+  for fb in /sys/class/graphics/fb*/virtual_size; do
+      if [ -f "$fb" ]; then
+          local fb_num=$(echo "$fb" | grep -o 'fb[0-9]*' | sed 's/fb//')
+          local size=$(cat "$fb")
+          local width=$(echo "$size" | cut -d',' -f1)
+          local height=$(echo "$size" | cut -d',' -f2)
+          local area=$((width * height))
+
+          if [ $area -gt $max_area ]; then
+              max_area=$area
+              max_fb=$fb_num
+          fi
+      fi
+  done
+  echo $max_fb
+}
+
+function set_gptokeyb() {
+	local default=$1
+	local gptokeyb=$2
+
+	[[ -z "${gptokeyb}" ]] && gptokeyb=$default
+
+	local kbfile="/emuelec/configs/gptokeyb/${gptokeyb}.gptk"
+
+	if [[ ! -f "$kbfile" ]]; then
+		echo -e "\n" && return
+	fi
+
+	echo "-c ${kbfile}"
+}
+
+cmd=${1}
+shift
+$cmd "$@"
+
+exit 0
