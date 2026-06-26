@@ -1,3 +1,52 @@
+# w2xg2022/EmuELEC
+
+本仓库基于上游 [EmuELEC](https://github.com/EmuELEC/EmuELEC) 二次开发，为 w2xg2022 适配的电视盒子/开发板提供云编译固件。
+
+## 选型策略：三级志愿
+
+每台盒子按以下顺序逐级尝试，选第一个能稳定跑起来的方案：
+
+1. 🥇 **Armbian + ES4A**（见 [w2xg2022/armbian](https://github.com/w2xg2022/armbian)、[w2xg2022/armbian-kernel](https://github.com/w2xg2022/armbian-kernel)）
+   主线内核 Armbian，跑 EmulationStation 前端。最通用——Armbian 本身很流行，还能当 Server 用，优先选这条路。
+2. 🥈 **EmuELEC（本仓库）**
+   当主线内核对某型号支持还不成熟（不稳定、缺驱动，常见于厂商自家 WiFi 芯片）时，改用 Amlogic 厂商内核（与 CoreELEC 同源），换取稳定性。
+3. 🥉 **Android + Pegasus**
+   连 EmuELEC 都跑不起来的型号（如 HiSilicon 芯片、锁机、纯 32 位老芯片），保留原厂 Android 系统，装 Pegasus 前端做模拟器启动器。
+
+## 本仓库定位
+
+本仓库 = **第二志愿**。收录"主线内核不稳定、但有 Amlogic 厂商内核（CoreELEC 同源）可用"的型号。
+
+## 已支持/适配中型号
+
+| 型号 | 芯片 | 状态 |
+|---|---|---|
+| X98mini | Amlogic S905W2 (S4) | 适配中 |
+
+## 云编译
+
+通过 GitHub Actions 自动编译（`.github/workflows/build-emuelec.yml`），支持：
+- 手动触发，可指定要编译的型号（workflow_dispatch 的 `models` 参数）
+- 每月 1 号自动全部型号重新编译一次（跟上游同步）
+
+编译指令范例：
+```
+PROJECT=Amlogic-ce DEVICE=Amlogic-no SUBDEVICE=X98mini IMAGE_SUFFIX=X98mini ARCH=aarch64 DISTRO=EmuELEC make image
+```
+
+固件命名格式：`EmuELEC-Amlogic-no.aarch64-<版本>-<型号名>.img.gz`
+
+## 新增型号步骤
+
+1. 在 `projects/Amlogic-ce/devices/Amlogic-no/bootloader/subdevice_config.sh` 加一个 case 分支，指定该型号对应的 `DEVICE_DTB`。
+2. 把型号名加进 repo variable `MODELS`（多个型号用空格分隔）。
+3. 手动触发一次 workflow 验证编译是否成功，再观察自动月编译是否正常。
+
+---
+
+以下为上游 EmuELEC 原始说明：
+
+
 # EmuELEC  
 Retro emulation for Amlogic devices.
 Based on  [CoreELEC](https://github.com/CoreELEC/CoreELEC) and [Lakka](https://github.com/libretro/Lakka-LibreELEC) with tidbits from [Batocera](https://github.com/batocera-linux/batocera.linux). I just combine them with [Batocera-Emulationstation](https://github.com/batocera-linux/batocera-emulationstation) and some standalone emulators ([Advancemame](https://github.com/amadvance/advancemame), [PPSSPP](https://github.com/hrydgard/ppsspp), [Reicast](https://github.com/reicast/reicast-emulator), [Amiberry](https://github.com/midwan/amiberry) and others). 
