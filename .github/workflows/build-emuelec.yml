@@ -62,6 +62,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Cache downloaded sources
+        uses: actions/cache@v4
+        with:
+          path: sources
+          key: sources-${{ hashFiles('**/package.mk') }}
+          restore-keys: |
+            sources-
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -90,6 +98,7 @@ jobs:
           ls -la out/ || echo "no artifacts found, check build log"
 
       - name: Upload build log (always)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-log-${{ matrix.model }}
