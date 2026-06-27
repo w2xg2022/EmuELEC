@@ -65,7 +65,11 @@ if [ "${ARCH}" == "aarch64" ]; then
 fi
 
 # We make sure MAME is the last package from EE to be built.
-if [ "${DEVICE}" == "Amlogic-ng" ] || [ "${DEVICE}" == "Amlogic-no" ] || [ "${DEVICE}" == "RK356x" ] || [ "${DEVICE}" == "OdroidM1" ]; then
+# NOTE(w2xg2022): Amlogic-no(X98mini) intentionally excludes full "mame" here -
+# too heavy for our build resources (cc1plus OOM-kills, huge disk/time cost).
+# mame2003-plus + mame2010 (see distributions/EmuELEC/options) already cover
+# the vast majority of arcade titles, so this is an acceptable tradeoff.
+if [ "${DEVICE}" == "Amlogic-ng" ] || [ "${DEVICE}" == "RK356x" ] || [ "${DEVICE}" == "OdroidM1" ]; then
 	PKG_DEPENDS_TARGET+=" mame"
 fi
 
