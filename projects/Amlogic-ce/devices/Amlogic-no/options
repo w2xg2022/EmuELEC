@@ -156,7 +156,13 @@
     ENTWARE_ARCH="aarch64-k3.10"
 
   # CoreELEC Subdevices #Khadas_VIM4 Khadas_VIM1S Odroid_C4 Odroid_N2 Radxa_Zero Radxa_Zero2 Alta Solitude
+  # NOTE(w2xg2022): X98mini只需要單一張image(自己的dtb已在subdevice_config.sh註冊)，
+  # 不要跑過整個CoreELEC板型清單(否則SUBDEVICES迴圈會覆蓋SUBDEVICE，產生9張不相關的image)
+  if [ "${SUBDEVICE}" = "X98mini" ]; then
+    SUBDEVICES=""
+  else
     SUBDEVICES="Khadas_VIM4 Khadas_VIM1S Odroid_C4 Odroid_N2 Radxa_Zero Radxa_Zero2 Alta Solitude"
+  fi
 
   # TEE supported SoC
     TEE_SOC="S928X A311D2 S905W2 S905X4 S905Y4"
