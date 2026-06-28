@@ -87,10 +87,16 @@ jobs:
 
       - name: Build (${{ matrix.model }})
         run: |
+          # NOTE(w2xg2022): /tmp掛在根目錄那個小分區(maximize-build-space沒擴充它，
+          # 開局就只剩~100MB)，gcc預設把組譯暫存檔(.s等)寫到/tmp，kernel編譯量大時
+          # 會把/tmp塞爆導致"No space left on device"，跟GITHUB_WORKSPACE大容量分區
+          # 是否還有空間完全無關。改把TMPDIR指到大容量分區下的目錄。
+          mkdir -p "${{ github.workspace }}/.tmp"
+          export TMPDIR="${{ github.workspace }}/.tmp"
           (
             PROJECT=${{ env.PROJECT }} DEVICE=${{ env.DEVICE }} SUBDEVICE=${{ matrix.model }} \
             IMAGE_SUFFIX=${{ matrix.model }} \
-            ARCH=${{ env.ARCH }} DISTRO=${{ env.DISTRO }} make image
+            ARCH=${{ env.ARCH }} DISTRO=${{ env.DISTRO }} TMPDIR="${TMPDIR}" make image
           ) > build-${{ matrix.model }}.log 2>&1 &
           BUILD_PID=$!
 
