@@ -25,13 +25,20 @@ if [[ ${DEVICE} == "OdroidM1"  ]] || [[ ${DEVICE} == "RK356x"  ]]; then
 fi
 
 # themes for Emulationstation
-PKG_DEPENDS_TARGET="${PKG_DEPENDS_TARGET} Crystal"
+PKG_DEPENDS_TARGET="${PKG_DEPENDS_TARGET} Crystal es-theme-alekfull-EmueELEC"
 
 pre_configure_target() {
 
 # build directly in ${PKG_BUILD} to avoid Python3 errors
   cd ${PKG_BUILD}
   rm -rf .${TARGET_NAME}
+
+# 用w2xg2022/es4armbian已校正的繁中/簡中翻譯覆蓋預設(較不準確)翻譯，
+# 編譯時CMake會用msgfmt把.po重新編成.mo
+  curl -sL -o locale/lang/zh_CN/LC_MESSAGES/emulationstation2.po \
+    https://raw.githubusercontent.com/w2xg2022/es4armbian/main/locale/lang/zh_CN/LC_MESSAGES/emulationstation2.po
+  curl -sL -o locale/lang/zh_TW/LC_MESSAGES/emulationstation2.po \
+    https://raw.githubusercontent.com/w2xg2022/es4armbian/main/locale/lang/zh_TW/LC_MESSAGES/emulationstation2.po
 
 PKG_CMAKE_OPTS_TARGET=" -DENABLE_EMUELEC=1 -DDISABLE_KODI=1 -DENABLE_FILEMANAGER=1 -DGLES2=1 -DENABLE_TTS=1"
 
