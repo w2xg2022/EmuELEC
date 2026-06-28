@@ -96,12 +96,14 @@ jobs:
 
           # 背景磁碟監控：可用空間<8GB時，自動清理已完成套件的build/原始編譯目錄
           # (保留install_pkg/成果，已驗證安全，最終映像組裝讀install_pkg不是build/)
+          # NOTE(w2xg2022): maximize-build-space把大容量磁碟掛在GITHUB_WORKSPACE(這裡的CWD)，
+          # 不是掛在根目錄"/"！根目錄本來就幾乎全滿跟建置無關，之前一直查"/"等於監控完全失效。
           while kill -0 $BUILD_PID 2>/dev/null; do
-            sleep 120
+            sleep 60
             BUILD_DIR=$(ls -d build.*/ 2>/dev/null | head -1)
-            AVAIL_GB=$(df --output=avail / | tail -1 | awk '{print int($1/1024/1024)}')
+            AVAIL_GB=$(df --output=avail . | tail -1 | awk '{print int($1/1024/1024)}')
             echo "[monitor] $(date +%T) disk avail: ${AVAIL_GB}GB"
-            if [ "$AVAIL_GB" -lt 8 ] && [ -n "$BUILD_DIR" ] && [ -d "${BUILD_DIR}install_pkg" ]; then
+            if [ "$AVAIL_GB" -lt 15 ] && [ -n "$BUILD_DIR" ] && [ -d "${BUILD_DIR}install_pkg" ]; then
               echo "[monitor] disk low, cleaning completed packages' build/ dirs..."
               CLEANED=0
               for d in $(ls "${BUILD_DIR}install_pkg" 2>/dev/null); do
@@ -111,7 +113,7 @@ jobs:
                 fi
               done
               echo "[monitor] cleaned ${CLEANED} package build dirs"
-              df -h /
+              df -h .
             fi
           done
 
