@@ -144,7 +144,9 @@
   # additional packages to install:
   # Space separated list is supported,
   # e.g. ADDITIONAL_PACKAGES="PACKAGE1 PACKAGE2"
-  # ADDITIONAL_PACKAGES+=""
+  # NOTE(w2xg2022): e900v22c-dtb只裝一個小dtb檔，所有Amlogic-ng建置都帶著無害，
+  # 不特別針對SUBDEVICE做條件判斷(只有SUBDEVICE=E900V22C時bootloader/mkimage才會真的用到它)
+    ADDITIONAL_PACKAGES+="e900v22c-dtb"
 
   # add OOTB support for IR remote
   # IR_REMOTE_KEYMAPS+=""
