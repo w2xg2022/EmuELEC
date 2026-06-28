@@ -7,7 +7,10 @@ PKG_SHA256="ff1b0139008ef76045014822bfa67699a0150cc2e7583c071bb5057a619c9c80"
 PKG_LICENSE="GPL"
 PKG_SITE="https://coreelec.org"
 PKG_URL="https://github.com/CoreELEC/bl30/archive/${PKG_VERSION}.tar.gz"
-PKG_DEPENDS_TARGET="toolchain gcc-linaro-aarch64-elf:host gcc-linaro-arm-eabi:host"
+# NOTE(w2xg2022): 原本缺gcc-riscv-none-embed:host依賴，make_target會用到
+# ${TOOLCHAIN}/lib/gcc-riscv-none-embed/bin裡的riscv-none-embed-gcc，
+# 沒宣告依賴=純靠平行編譯排程運氣(本機VM剛好先build到，雲端runner排序不同就會找不到編譯器失敗)。
+PKG_DEPENDS_TARGET="toolchain gcc-linaro-aarch64-elf:host gcc-linaro-arm-eabi:host gcc-riscv-none-embed:host"
 PKG_LONGDESC="Das U-Boot is a cross-platform bootloader for embedded systems."
 PKG_TOOLCHAIN="manual"
 
