@@ -19,8 +19,11 @@ Conflicts=shutdown.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/wait-time-sync
-TimeoutStartSec=infinity
+# NOTE(w2xg2022): 原本TimeoutStartSec=infinity,DHCP/網路若一直拿不到IP會無限卡住開機。
+# 加-t 60讓wait-time-sync自己最多等60秒就放棄繼續開機(用未同步的時間)，
+# TimeoutStartSec留多一點當systemd層保險。
+ExecStart=/usr/bin/wait-time-sync -t 60
+TimeoutStartSec=90
 RemainAfterExit=yes
 
 [Install]
