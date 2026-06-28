@@ -36,11 +36,15 @@ PKG_IS_ADDON="no"
 PKG_TOOLCHAIN="make"
 PKG_AUTORECONF="no"
 
+# NOTE(w2xg2022): 改用w2xg2022/EmuELEC-MAME预编译的.so,
+# 不在主建置(尤其云端CI磁盘有限)里重新编译这个重量级核心。
+# 若需要重新编译(MAME本体或工具链更新),到EmuELEC-MAME仓库手动触发rebuild workflow。
 make_target() {
-  make ARCH="" CC="${CC}" NATIVE_CC="${CC}" LD="${CC}"
+  : not
 }
 
 makeinstall_target() {
   mkdir -p ${INSTALL}/usr/lib/libretro
-  cp mame2003_plus_libretro.so ${INSTALL}/usr/lib/libretro/
+  curl -sL -o ${INSTALL}/usr/lib/libretro/mame2003_plus_libretro.so \
+    https://github.com/w2xg2022/EmuELEC-MAME/releases/latest/download/mame2003_plus_libretro.so
 }

@@ -36,20 +36,15 @@ PKG_IS_ADDON="no"
 PKG_TOOLCHAIN="make"
 PKG_AUTORECONF="no"
 
+# NOTE(w2xg2022): 改用w2xg2022/EmuELEC-MAME预编译的.so,
+# 不在主建置(尤其云端CI磁盘有限)里重新编译这个重量级核心。
+# 若需要重新编译(MAME本体或工具链更新),到EmuELEC-MAME仓库手动触发rebuild workflow。
 make_target() {
-  if [ "${ARCH}" == "arm" ]; then
-    make CC="${CC}" LD="${CC}" PLATCFLAGS="${CFLAGS}" PTR64=0 ARM_ENABLED=1 LCPU=arm
-  elif [ "${ARCH}" == "i386" ]; then
-    make CC="${CC}" LD="${CC}" PLATCFLAGS="${CFLAGS}" PTR64=0 ARM_ENABLED=0 LCPU=x86
-  elif [ "${ARCH}" == "x86_64" ]; then
-    make CC="${CC}" LD="${CC}" PLATCFLAGS="${CFLAGS}" PTR64=1 ARM_ENABLED=0 LCPU=x86_64
-  elif [ "${ARCH}" == "aarch64" ]; then
-	make CC="${CC}" LD="${CC}" PLATCFLAGS="${CFLAGS}" PTR64=1 ARM_ENABLED=1 LCPU=arm64 maketree
-    make CC="${CC}" LD="${CC}" PLATCFLAGS="${CFLAGS}" PTR64=1 ARM_ENABLED=1 LCPU=arm64
-  fi
+  : not
 }
 
 makeinstall_target() {
   mkdir -p ${INSTALL}/usr/lib/libretro
-  cp mame2010_libretro.so ${INSTALL}/usr/lib/libretro/
+  curl -sL -o ${INSTALL}/usr/lib/libretro/mame2010_libretro.so \
+    https://github.com/w2xg2022/EmuELEC-MAME/releases/latest/download/mame2010_libretro.so
 }
