@@ -197,12 +197,20 @@
       "manufacturer": "Apple",
       "release": "1977",
       "hardware": "computer",
-      "path": "/storage/roms/apple",
+      "path": "/storage/roms/apple2",
       "platform": "apple2",
       "theme": "apple2",
       "command": "default",
       "extensions": [
-        ".cmd"
+        ".cmd",
+        ".dsk",
+        ".do",
+        ".po",
+        ".nib",
+        ".woz",
+        ".2mg",
+        ".zip",
+        ".7z"
       ],
       "emulators": [
         {
