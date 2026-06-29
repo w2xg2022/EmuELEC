@@ -11,6 +11,9 @@
 [Unit]
 Description=Wait for Kernel Time Synchronisation
 ConditionVirtualization=!container
+# NOTE(w2xg2022): 第一次開機(安裝後初次啟動)略過等待，不影響後續初始化；
+# 第2次開機起正常運行等待網路時間同步。
+ConditionFirstBoot=false
 
 DefaultDependencies=no
 Before=time-sync.target shutdown.target
