@@ -51,7 +51,10 @@ jobs:
       - name: Maximize build space
         uses: easimon/maximize-build-space@v10
         with:
-          root-reserve-mb: 1024
+          # NOTE(w2xg2022): root-reserve-mb太小(1024)，建置跑超過2小時後根目錄(/tmp、
+          # runner自己的診斷log等雜項寫入)會慢慢塞滿，最終連runner本身都掛掉(No space
+          # left on device寫進runner自己的trace log)。調大給更多餘裕。
+          root-reserve-mb: 8192
           swap-size-mb: 512
           remove-dotnet: 'true'
           remove-android: 'true'
