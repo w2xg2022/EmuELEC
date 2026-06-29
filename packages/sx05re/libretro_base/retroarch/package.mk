@@ -122,7 +122,15 @@ makeinstall_target() {
   sed -i -e "s/# assets_directory =/assets_directory =\/tmp\/assets/" ${INSTALL}/etc/retroarch.cfg
   sed -i -e "s/# overlay_directory =/overlay_directory =\/tmp\/overlays/" ${INSTALL}/etc/retroarch.cfg
   sed -i -e "s/# cheat_database_path =/cheat_database_path =\/tmp\/database\/cht/" ${INSTALL}/etc/retroarch.cfg
-  sed -i -e "s/# menu_driver = \"rgui\"/menu_driver = \"ozone\"/" ${INSTALL}/etc/retroarch.cfg
+  sed -i -e "s/# menu_driver = \"rgui\"/menu_driver = \"xmb\"/" ${INSTALL}/etc/retroarch.cfg
+
+  # NOTE(w2xg2022): 下载w2xg2022/es4armbian-1key证实有效的中文字体(取代预设
+  # xmb/monochrome/font.ttf缺CJK字形导致选单/OSD中文显示为方块的问题)，
+  # 同时设xmb_font/ozone_font/video_font_path三个都指向它，三者各自独立、缺一个就会有部分文字方块。
+  mkdir -p ${INSTALL}/usr/share/retroarch-cjk-font
+  curl -sL -o ${INSTALL}/usr/share/retroarch-cjk-font/font.ttf     https://raw.githubusercontent.com/w2xg2022/es4armbian-1key/main/assets/fonts/regular.ttf
+  sed -i -e "s/# xmb_font =/xmb_font =\/usr\/share\/retroarch-cjk-font\/font.ttf/" ${INSTALL}/etc/retroarch.cfg
+  sed -i -e "s/# ozone_font =/ozone_font =\/usr\/share\/retroarch-cjk-font\/font.ttf/" ${INSTALL}/etc/retroarch.cfg
  
   # Quick menu
   echo "core_assets_directory =/storage/roms/downloads" >> ${INSTALL}/etc/retroarch.cfg
@@ -136,7 +144,7 @@ makeinstall_target() {
   sed -i -e "s/# video_smooth = true/video_smooth = false/" ${INSTALL}/etc/retroarch.cfg
   sed -i -e "s/# video_aspect_ratio_auto = false/video_aspect_ratio_auto = true/" ${INSTALL}/etc/retroarch.cfg
   sed -i -e "s/# video_threaded = false/video_threaded = true/" ${INSTALL}/etc/retroarch.cfg
-  sed -i -e "s/# video_font_path =/video_font_path =\/usr\/share\/retroarch-assets\/xmb\/monochrome\/font.ttf/" ${INSTALL}/etc/retroarch.cfg
+  sed -i -e "s/# video_font_path =/video_font_path =\/usr\/share\/retroarch-cjk-font\/font.ttf/" ${INSTALL}/etc/retroarch.cfg
   sed -i -e "s/# video_font_size = 48/video_font_size = 32/" ${INSTALL}/etc/retroarch.cfg
   sed -i -e "s/# video_filter_dir =/video_filter_dir =\/usr\/share\/video_filters/" ${INSTALL}/etc/retroarch.cfg
   sed -i -e "s/# video_gpu_screenshot = true/video_gpu_screenshot = false/" ${INSTALL}/etc/retroarch.cfg
