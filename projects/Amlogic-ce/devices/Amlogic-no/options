@@ -111,11 +111,16 @@
   # for a list of additinoal drivers see packages/linux-drivers
   # Space separated list is supported,
   # e.g. ADDITIONAL_DRIVERS="DRIVER1 DRIVER2"
-  # NOTE(w2xg2022): 加uwe5631-aml給E900V22C(Skyworth,g12a/S905X2)的uwe5621ds WiFi/藍牙用，
-  # no線原本沒列這個套件(ng線options有)。詳見project_e900v22c記憶。
-  ADDITIONAL_DRIVERS="gpu-aml openvfd-driver media_modules-aml wifi_dummy-aml ap6xxx-aml
+    ADDITIONAL_DRIVERS="gpu-aml openvfd-driver media_modules-aml wifi_dummy-aml ap6xxx-aml
                       aic8800-sdio RTW88 RTL8189FS RTL8852BE-aml RTL8723DS-aml
-                      RTL8851BU RTL8852BS-aml mt76 mt7668-wifi-bt w1-aml uwe5631-aml"
+                      RTL8851BU RTL8852BS-aml mt76 mt7668-wifi-bt w1-aml"
+
+  # NOTE(w2xg2022): uwe5631-aml給E900V22C(Skyworth,g12a/S905X2)的uwe5621ds WiFi/藍牙用，
+  # 編譯會失敗(wcn_dump.o)，只限E900V22C才加，避免拖累其他SUBDEVICE(如X98mini)的編譯。
+  # no線原本沒列這個套件(ng線options有)。詳見project_e900v22c記憶。
+  if [ "${SUBDEVICE}" = "E900V22C" ]; then
+    ADDITIONAL_DRIVERS="${ADDITIONAL_DRIVERS} uwe5631-aml"
+  fi
       
 
   # additional Firmware to use (dvb-firmware, misc-firmware, wlan-firmware)
