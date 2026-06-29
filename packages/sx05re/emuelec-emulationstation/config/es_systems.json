@@ -95,14 +95,6 @@
       ],
       "emulators": [
         {
-          "name": "AdvanceMame",
-          "cores": [
-            {
-              "name": "AdvanceMame"
-            }
-          ]
-        },
-        {
           "name": "libretro",
           "cores": [
             {
@@ -117,9 +109,6 @@
             },
             {
               "name": "fbalpha2012"
-            },
-            {
-              "name": "mame"
             }
           ]
         },
@@ -150,19 +139,11 @@
       ],
       "emulators": [
         {
-          "name": "AdvanceMame",
-          "cores": [
-            {
-              "name": "AdvanceMame",
-              "default": true
-            }
-          ]
-        },
-        {
           "name": "libretro",
           "cores": [
             {
-              "name": "mame2003_plus"
+              "name": "mame2003_plus",
+              "default": true
             },
             {
               "name": "mame2010"
@@ -172,9 +153,6 @@
             },
             {
               "name": "fbalpha2012"
-            },
-            {
-              "name": "mame"
             }
           ]
         },
@@ -3783,11 +3761,19 @@
       ],
       "emulators": [
         {
+          "name": "libretro",
+          "cores": [
+            {
+              "name": "spring_ppsspp",
+              "default": true
+            }
+          ]
+        },
+        {
           "name": "PPSSPPSDL",
           "cores": [
             {
-              "name": "PPSSPPSDL",
-              "default": true
+              "name": "PPSSPPSDL"
             }
           ]
         }
