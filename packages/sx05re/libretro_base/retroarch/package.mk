@@ -129,9 +129,13 @@ makeinstall_target() {
   # 同时设xmb_font/ozone_font/video_font_path三个都指向它，三者各自独立、缺一个就会有部分文字方块。
   mkdir -p ${INSTALL}/usr/share/retroarch-cjk-font
   curl -sL -o ${INSTALL}/usr/share/retroarch-cjk-font/font.ttf     https://raw.githubusercontent.com/w2xg2022/es4armbian-1key/main/assets/fonts/regular.ttf
-  sed -i -e "s/# xmb_font =/xmb_font =\/usr\/share\/retroarch-cjk-font\/font.ttf/" ${INSTALL}/etc/retroarch.cfg
-  sed -i -e "s/# ozone_font =/ozone_font =\/usr\/share\/retroarch-cjk-font\/font.ttf/" ${INSTALL}/etc/retroarch.cfg
- 
+  # NOTE(w2xg2022): 上游retroarch.cfg範本已經把"# xmb_font ="/"# ozone_font ="這兩行
+  # 拿掉了(只剩video_font_path還在)，sed比對不到字串會悄悄不生效，導致這兩個設定
+  # 一直是空字串。改用echo附加，不依賴上游範本文字是否存在(RA設定檔key重複時以
+  # 後面的為準，附加不會跟既有的衝突)。
+  echo "xmb_font =/usr/share/retroarch-cjk-font/font.ttf" >> ${INSTALL}/etc/retroarch.cfg
+  echo "ozone_font =/usr/share/retroarch-cjk-font/font.ttf" >> ${INSTALL}/etc/retroarch.cfg
+
   # Quick menu
   echo "core_assets_directory =/storage/roms/downloads" >> ${INSTALL}/etc/retroarch.cfg
   echo "quick_menu_show_undo_save_load_state = \"false\"" >> ${INSTALL}/etc/retroarch.cfg
