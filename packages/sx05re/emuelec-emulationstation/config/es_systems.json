@@ -217,8 +217,12 @@
           "name": "libretro",
           "cores": [
             {
-              "name": "mame",
+              "name": "applewin",
               "default": true
+            },
+            {
+              "name": "mame",
+              "default": false
             }
           ]
         }

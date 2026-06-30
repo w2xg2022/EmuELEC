@@ -40,6 +40,10 @@ pre_configure_target() {
   curl -sL -o locale/lang/zh_TW/LC_MESSAGES/emulationstation2.po \
     https://raw.githubusercontent.com/w2xg2022/es4armbian/main/locale/lang/zh_TW/LC_MESSAGES/emulationstation2.po
 
+# NOTE(w2xg2022): 語言選單裡zh_TW的顯示名稱是寫死在GuiMenu.cpp的C++字串常數，
+# 不是.po翻譯檔的內容(跟上面.po下載是兩回事)，"正體中文"應改為"繁體中文"。
+  sed -i 's/"正體中文"/"繁體中文"/' es-app/src/guis/GuiMenu.cpp
+
 PKG_CMAKE_OPTS_TARGET=" -DENABLE_EMUELEC=1 -DDISABLE_KODI=1 -DENABLE_FILEMANAGER=1 -DGLES2=1 -DENABLE_TTS=1"
 
 # Read api_keys.txt if it exist to add the required keys for cheevos, thegamesdb and screenscrapper. You need to get your own API keys. 

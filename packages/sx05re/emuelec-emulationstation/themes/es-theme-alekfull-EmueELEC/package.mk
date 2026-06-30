@@ -23,4 +23,13 @@ make_target() {
 makeinstall_target() {
   mkdir -p ${INSTALL}/usr/config/emulationstation/themes/es-theme-alekfull-EmueELEC
     cp -r * ${INSTALL}/usr/config/emulationstation/themes/es-theme-alekfull-EmueELEC
+
+# NOTE(w2xg2022): 這是實際生效的預設主題(不是Crystal，Crystal只是依賴包但沒被選用)，
+# 主菜單"EMUELEC設置"圖示一直空白是因為這個主題的menuicons.xml根本沒定義iconEmuelec，
+# 不是圖檔問題。Emuelec.png(從Crystal主題的彩色logo用ImageMagick轉成白色單色剪影，
+# 保留原本alpha透明度)是這個package.mk目錄裡的本地檔案，跟其他純白圖示風格一致，
+# 套用colorShift才不會變成黑白反色。
+  cp ${PKG_DIR}/Emuelec.png ${INSTALL}/usr/config/emulationstation/themes/es-theme-alekfull-EmueELEC/_inc/icons/Emuelec.png
+  sed -i 's|<iconAdvanced>./Advanced.png</iconAdvanced>|<iconAdvanced>./Advanced.png</iconAdvanced>\n            <iconEmuelec>./Emuelec.png</iconEmuelec>|' \
+    ${INSTALL}/usr/config/emulationstation/themes/es-theme-alekfull-EmueELEC/_inc/icons/menuicons.xml
 }

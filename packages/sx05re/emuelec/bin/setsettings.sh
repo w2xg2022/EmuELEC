@@ -104,6 +104,19 @@ echo "user_language = ${LANGEMUELEC}" >> ${TMP_RACONF}
 
 write_log "Set Language to ${EE_LANG} Retroarch: ${LANGEMUELEC}"
 
+# NOTE(w2xg2022): ES自己的介面語言(es_settings.cfg的Language)跟system.language是
+# 兩個獨立設定，原本只同步給RetroArch，ES本身語言一直沒跟著system.language走。
+# ES內部locale代碼跟system.language同樣是zh_CN/zh_TW這類標準值，直接同步即可。
+ES_SETTINGS_CFG="/storage/.emulationstation/es_settings.cfg"
+if [ -f "${ES_SETTINGS_CFG}" ] && [ -n "${EE_LANG}" ]; then
+    if grep -q 'name="Language"' "${ES_SETTINGS_CFG}"; then
+        sed -i "s/name=\"Language\" value=\"[^\"]*\"/name=\"Language\" value=\"${EE_LANG}\"/" "${ES_SETTINGS_CFG}"
+    else
+        sed -i "s|</config>|\t<string name=\"Language\" value=\"${EE_LANG}\" />\n</config>|" "${ES_SETTINGS_CFG}"
+    fi
+    write_log "Set ES UI Language to ${EE_LANG}"
+fi
+
 EE_RUMBLE=$(get_ee_setting ee_rumble_strength)
 [[ -z "${EE_RUMBLE}" ]] && EE_RUMBLE=0
 EE_RUMBLE_VAL=0
