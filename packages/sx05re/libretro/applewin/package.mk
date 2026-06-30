@@ -18,6 +18,13 @@ PKG_TOOLCHAIN="cmake"
 # 唯一不需要Qt5/Boost的build選項(只有BUILD_QAPPLE才需要那些)。
 pre_configure_target() {
   PKG_CMAKE_OPTS_TARGET+=" -DCMAKE_BUILD_TYPE=Release -DBUILD_LIBRETRO=ON -DBUILD_QAPPLE=OFF -DBUILD_SA2=OFF -DBUILD_APPLEN=OFF"
+
+# NOTE(w2xg2022): resource/Cousine-Regular.ttf在git倉庫裡是指向imgui submodule的
+# symlink，archive.tar.gz下載不含submodule內容，解開後變成死連結，xxd讀不到檔案
+# 導致build失敗。直接下載實際字體檔覆蓋掉這個死連結。
+  rm -f ${PKG_BUILD}/resource/Cousine-Regular.ttf
+  curl -sL -o ${PKG_BUILD}/resource/Cousine-Regular.ttf \
+    https://raw.githubusercontent.com/ocornut/imgui/master/misc/fonts/Cousine-Regular.ttf
 }
 
 makeinstall_target() {
