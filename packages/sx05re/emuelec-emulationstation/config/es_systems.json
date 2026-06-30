@@ -3776,8 +3776,11 @@
           "name": "libretro",
           "cores": [
             {
-              "name": "spring_ppsspp",
+              "name": "ppsspp",
               "default": true
+            },
+            {
+              "name": "spring_ppsspp"
             }
           ]
         },
