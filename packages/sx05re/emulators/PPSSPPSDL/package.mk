@@ -19,9 +19,14 @@ GET_HANDLER_SUPPORT="git"
 PKG_BUILD_FLAGS="-lto"
 
 
+# NOTE(w2xg2022): 原本USING_FBDEV=ON直接畫/dev/fb0，會踩到廠商BSP核心同一顆
+# Mali/framebuffer驅動的指標同步bug(實機驗證：fb0/fb1內容完全沒變化、process
+# 卡住燒CPU，跟之前修好的PSP音效ALSA MMAP是同一家廠商驅動的同類問題)。改用
+# EGL/DRM，跟ES/RA現在走的同一條已驗證沒問題的路徑(透過Mali)，繞開fbdev這條
+# 有bug的路。
 PKG_CMAKE_OPTS_TARGET+="-DUSE_SYSTEM_FFMPEG=ON \
-                        -DUSING_FBDEV=ON \
-                        -DUSING_EGL=OFF \
+                        -DUSING_FBDEV=OFF \
+                        -DUSING_EGL=ON \
                         -DUSING_GLES2=ON \
                         -DUSING_X11_VULKAN=OFF \
                         -DUSE_DISCORD=OFF"
