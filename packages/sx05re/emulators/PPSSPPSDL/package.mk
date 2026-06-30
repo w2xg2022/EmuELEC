@@ -19,13 +19,16 @@ GET_HANDLER_SUPPORT="git"
 PKG_BUILD_FLAGS="-lto"
 
 
-# NOTE(w2xg2022): 原本USING_FBDEV=ON直接畫/dev/fb0，會踩到廠商BSP核心同一顆
-# Mali/framebuffer驅動的指標同步bug(實機驗證：fb0/fb1內容完全沒變化、process
-# 卡住燒CPU，跟之前修好的PSP音效ALSA MMAP是同一家廠商驅動的同類問題)。改用
-# EGL/DRM，跟ES/RA現在走的同一條已驗證沒問題的路徑(透過Mali)，繞開fbdev這條
-# 有bug的路。
+# NOTE(w2xg2022): 原本USING_FBDEV=ON+USING_EGL=OFF直接畫/dev/fb0，會踩到廠商
+# BSP核心同一顆Mali/framebuffer驅動的指標同步bug(實機驗證：fb0/fb1內容完全
+# 沒變化、process卡住燒CPU)。一開始嘗試單獨改成USING_EGL=ON+USING_FBDEV=OFF
+# 結果編譯失敗(SDLGLGraphicsContext.cpp的EGL_Open()在USING_FBDEV未定義時
+# 會跑進預期X11環境的分支，呼叫XOpenDisplay，我們是純DRM沒有X11)。看原始碼
+# 才發現USING_FBDEV實際上是控制EGL_Open()要不要用nullptr/EGL_DEFAULT_DISPLAY
+# (Mali原生DRM路徑)，不是「跳過EGL走純framebuffer」的意思，兩個flag要一起開
+# 才對，跟ppsspp(libretro core版本)package.mk的設定一致。
 PKG_CMAKE_OPTS_TARGET+="-DUSE_SYSTEM_FFMPEG=ON \
-                        -DUSING_FBDEV=OFF \
+                        -DUSING_FBDEV=ON \
                         -DUSING_EGL=ON \
                         -DUSING_GLES2=ON \
                         -DUSING_X11_VULKAN=OFF \
