@@ -8,7 +8,11 @@ PKG_ARCH="any"
 PKG_LICENSE="MAME"
 PKG_SITE="https://github.com/hrydgard/ppsspp"
 PKG_URL="https://github.com/hrydgard/ppsspp.git"
-PKG_DEPENDS_TARGET="toolchain ffmpeg libzip libpng SDL2 zlib zip libglvnd"
+# NOTE(w2xg2022): libglvnd原本是為了補PPSSPP的libOpenGL.so.0依賴加的，但ldd
+# 確認PPSSPPSDL根本沒有直接連結libOpenGL.so(誤診)，而libglvnd會把系統的
+# libEGL.so.1/libGLESv2.so.2 symlink從Mali改指向它自己沒設定vendor config
+# 的dispatcher，導致ES/RA整個顯示初始化失敗(Could not get EGL display)。拿掉。
+PKG_DEPENDS_TARGET="toolchain ffmpeg libzip libpng SDL2 zlib zip"
 PKG_SHORTDESC="PPSSPPDL"
 PKG_LONGDESC="PPSSPP Standalone"
 GET_HANDLER_SUPPORT="git"

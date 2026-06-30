@@ -24,7 +24,9 @@ PKG_NEED_UNPACK="$(get_pkg_directory PPSSPPSDL)"
 PKG_LICENSE="GPLv2"
 PKG_SITE="https://github.com/hrydgard/ppsspp"
 PKG_URL="https://github.com/hrydgard/ppsspp.git"
-PKG_DEPENDS_TARGET="toolchain SDL2 ffmpeg libglvnd"
+# NOTE(w2xg2022): libglvnd會覆蓋系統libEGL.so.1/libGLESv2.so.2指向Mali的symlink，
+# 導致ES/RA顯示初始化失敗，且libretro core實際沒有直接連結libOpenGL.so，拿掉。
+PKG_DEPENDS_TARGET="toolchain SDL2 ffmpeg"
 PKG_LONGDESC="A PSP emulator for Android, Windows, Mac, Linux and Blackberry 10, written in C++."
 GET_HANDLER_SUPPORT="git"
 PKG_PATCH_DIRS+=" $(get_pkg_directory PPSSPPSDL)/patches"
