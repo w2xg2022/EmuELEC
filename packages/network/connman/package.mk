@@ -92,7 +92,13 @@ post_makeinstall_target() {
         -e "s|^# TetheringTechnologies.*|TetheringTechnologies = ethernet,wifi|g" \
         -e "s|^# AllowHostnameUpdates.*|AllowHostnameUpdates = false|g" \
         -e "s|^# PersistentTetheringMode.*|PersistentTetheringMode = true|g" \
-        -e "s|^# NetworkInterfaceBlacklist = vmnet,vboxnet,virbr,ifb|NetworkInterfaceBlacklist = vmnet,vboxnet,virbr,ifb,docker,veth,zt|g"
+        -e "s|^# NetworkInterfaceBlacklist = vmnet,vboxnet,virbr,ifb|NetworkInterfaceBlacklist = vmnet,vboxnet,virbr,ifb,docker,veth,zt,p2p|g"
+# NOTE(w2xg2022): 部分廠商WiFi驅動(如X98mini的aic8800)開機時會連同wlan0一起
+# 寫死建立p2p0(WiFi Direct)虛擬介面，導致ConnMan把p2p0當成獨立的wifi技術
+# 各自掃描，造成ES的WiFi清單裡每個SSID都重複顯示一次。實測過iw dev p2p0 del
+# 會讓這顆驅動的核心狀態機整個當機(風險極高，不要再嘗試)，改為讓ConnMan的
+# NetworkInterfaceBlacklist直接忽略p2p開頭的介面，不掃描、不建立服務，
+# 完全不碰驅動本身，wlan0不受影響。
 
   mkdir -p ${INSTALL}/usr/share/connman/
     cp ${PKG_DIR}/config/settings ${INSTALL}/usr/share/connman/
