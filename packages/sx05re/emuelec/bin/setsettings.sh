@@ -633,6 +633,60 @@ inverted_ok_cancel=$(get_es_setting bool InvertButtons)
 [[ ${inverted_ok_cancel} == "true" ]] || inverted_ok_cancel="false"
 echo "menu_swap_ok_cancel_buttons = \"${inverted_ok_cancel}\"" >> ${RACONF}
 
+# NOTE(w2xg2022): InvertGameButtons ES設定(跟InvertButtons同一個設定畫面) ->
+# 動態產生/移除對應core的per-core remap，讓遊戲內A/B、X/Y對調(位置對齊，
+# PS/PSP等幾何符號系統手感正確，實機驗證過)可以隨ES開關切換，而不是寫死。
+# 用BEGIN/END標記包住新增的4行，每次啟動都先移除舊標記區塊再視設定決定要不要
+# 重新加入，避免重複啟動遊戲後remap檔案內容一直疊加；標記以外的既有內容
+# (例如N64 Mupen64Plus-Next.rmp原本就有的input_playerN_analog_dpad_mode)保留不動。
+declare -A EE_GAMEBTN_CORENAME=(
+    [applewin]="applewin"
+    [fbneo]="FinalBurn Neo"
+    [mgba]="mGBA"
+    [gambatte]="Gambatte"
+    [genesis_plus_gx]="Genesis Plus GX"
+    [mame2003_plus]="MAME 2003-Plus"
+    [mupen64plus_next]="Mupen64Plus-Next"
+    [nestopia]="Nestopia"
+    [dosbox_pure]="DOSBox-pure"
+    [mednafen_pce_fast]="Beetle PCE Fast"
+    [ppsspp]="PPSSPP"
+    [pcsx_rearmed_32b]="PCSX-ReARMed 32Bit"
+    [yabasanshiroSA1_5]="YabaSanshiro"
+    [snes9x]="Snes9x"
+)
+EE_GAMEBTN_CORENAME_VAL="${EE_GAMEBTN_CORENAME[${CORE}]}"
+if [[ -n "${EE_GAMEBTN_CORENAME_VAL}" ]]; then
+    # 這個對調本身是為了修正PS/PSP等幾何符號系統按鍵位置錯亂的bug(實機驗證過)，
+    # 預設開啟(位置對齊)，未設定過(es_settings.cfg還沒這個key，回傳空字串)時
+    # 一律視為開啟，只有使用者明確在ES設定畫面關掉(存成"false")才關閉，
+    # 避免"預設是壞的、要使用者自己發現並手動修"這種糟糕的預設體驗。
+    EE_INVERT_GAME_BTN=$(get_es_setting bool InvertGameButtons)
+    [[ "${EE_INVERT_GAME_BTN}" == "false" ]] || EE_INVERT_GAME_BTN="true"
+    EE_RMP_DIR="/storage/.config/retroarch/config/remappings/${EE_GAMEBTN_CORENAME_VAL}"
+    EE_RMP_FILE="${EE_RMP_DIR}/${EE_GAMEBTN_CORENAME_VAL}.rmp"
+    if [[ -f "${EE_RMP_FILE}" ]]; then
+        sed -i '/^# BEGIN InvertGameButtons$/,/^# END InvertGameButtons$/d' "${EE_RMP_FILE}"
+    fi
+    if [[ "${EE_INVERT_GAME_BTN}" == "true" ]]; then
+        mkdir -p "${EE_RMP_DIR}"
+        {
+            echo "# BEGIN InvertGameButtons"
+            echo 'input_player1_btn_a = "0"'
+            echo 'input_player1_btn_b = "8"'
+            echo 'input_player1_btn_x = "1"'
+            echo 'input_player1_btn_y = "9"'
+            echo "# END InvertGameButtons"
+        } >> "${EE_RMP_FILE}"
+    fi
+    # 移除標記後若檔案變成全空(該core原本沒有其他remap內容)，直接刪掉整個檔案/
+    # 資料夾，避免RA讀到一個空remap檔案殘留在磁碟上
+    if [[ -f "${EE_RMP_FILE}" ]] && ! grep -q '[^[:space:]]' "${EE_RMP_FILE}"; then
+        rm -f "${EE_RMP_FILE}"
+        rmdir "${EE_RMP_DIR}" 2>/dev/null
+    fi
+fi
+
 echo "cheevos_unsupported_notification = \"false\"" >> ${RACONF}
 
 # Merge the changes to: /storage/.config/retroarch/retroarch.cfg 

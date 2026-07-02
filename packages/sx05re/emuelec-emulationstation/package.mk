@@ -58,6 +58,55 @@ pre_configure_target() {
     -e 's|{ "y",                true,  "BUTTON Y / WEST",    ":/help/buttons_west.svg" }|{ "y",                true,  "BUTTON Y / NORTH",   ":/help/buttons_north.svg" }|' \
     es-core/src/guis/GuiInputConfig.cpp
 
+# NOTE(w2xg2022): 新增ES設定畫面開關"InvertGameButtons"(跟既有InvertButtons
+# 同一個畫面)，讓使用者可以動態切換遊戲內A/B、X/Y對調(位置對齊，PS/PSP等
+# 幾何符號系統手感正確)，而不是寫死。這個bool設定由setsettings.sh在每次
+# 啟動遊戲前讀取，動態產生/移除對應core的remap檔案(見emuelec/bin/setsettings.sh
+# 的InvertGameButtons區塊)。
+# 用python3做精確多行區塊插入(比對整段唯一字串，比sed逐行比對更不怕排版差異，
+# 且assert比對失敗時會讓build直接報錯，不會像sed比對不到時悄悄不生效)。
+  python3 - <<'PYEOF'
+anchor = '''	auto invertJoy = std::make_shared<SwitchComponent>(mWindow);
+	invertJoy->setState(Settings::getInstance()->getBool("InvertButtons"));
+	s->addWithDescription(_("SWITCH CONFIRM & CANCEL BUTTONS IN EMULATIONSTATION"), _("Switches the South and East buttons' functionality"), invertJoy);
+	s->addSaveFunc([this, s, invertJoy]
+	{
+		if (Settings::getInstance()->setBool("InvertButtons", invertJoy->getState()))
+		{
+			InputConfig::AssignActionButtons();
+			s->setVariable("reloadAll", true);
+		}
+	});
+'''
+
+addition = '''
+	auto invertGameButtons = std::make_shared<SwitchComponent>(mWindow);
+	invertGameButtons->setState(Settings::getInstance()->getBool("InvertGameButtons"));
+	s->addWithDescription(_("SWITCH A/B, X/Y BUTTONS IN GAMES"), _("Swaps A/B and X/Y RetroPad bindings during gameplay (position-aligned for PlayStation/PSP style symbol layouts)"), invertGameButtons);
+	s->addSaveFunc([invertGameButtons]
+	{
+		Settings::getInstance()->setBool("InvertGameButtons", invertGameButtons->getState());
+	});
+'''
+
+path = "es-app/src/guis/GuiMenu.cpp"
+with open(path, "r", encoding="utf-8") as f:
+    content = f.read()
+assert content.count(anchor) == 1, "InvertButtons anchor block not found or not unique in GuiMenu.cpp"
+content = content.replace(anchor, anchor + addition)
+with open(path, "w", encoding="utf-8") as f:
+    f.write(content)
+
+path2 = "es-core/src/Settings.cpp"
+with open(path2, "r", encoding="utf-8") as f:
+    content2 = f.read()
+old = '\tmBoolMap["InvertButtons"] = false;\n'
+assert content2.count(old) == 1, "InvertButtons default line not found or not unique in Settings.cpp"
+content2 = content2.replace(old, old + '\tmBoolMap["InvertGameButtons"] = true;\n')
+with open(path2, "w", encoding="utf-8") as f:
+    f.write(content2)
+PYEOF
+
 PKG_CMAKE_OPTS_TARGET=" -DENABLE_EMUELEC=1 -DDISABLE_KODI=1 -DENABLE_FILEMANAGER=1 -DGLES2=1 -DENABLE_TTS=1"
 
 # Read api_keys.txt if it exist to add the required keys for cheevos, thegamesdb and screenscrapper. You need to get your own API keys. 
