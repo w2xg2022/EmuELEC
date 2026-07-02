@@ -6,7 +6,10 @@ PKG_VERSION="7.5.0-2019.12"
 PKG_SHA256="73689fb3e71beeecebd6434d60efad4cb926153d48399e4d16fb45395d9c81a0"
 PKG_LICENSE="GPL"
 PKG_SITE="https://www.linaro.org/"
-PKG_URL="https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-elf/gcc-linaro-${PKG_VERSION}-x86_64_aarch64-elf.tar.xz"
+# NOTE(w2xg2022): releases.linaro.org連線逾時(GitHub Actions runner測試確認)，
+# 改用sources.coreelec.org鏡像，實測sha256完全吻合，且是CoreELEC官方自己的
+# 鏡像站(這個package.mk header本身就是CoreELEC的)，不用把54MB塞進repo。
+PKG_URL="https://sources.coreelec.org/${PKG_NAME}/${PKG_NAME}-${PKG_VERSION}.tar.xz"
 PKG_DEPENDS_HOST="ccache:host"
 PKG_LONGDESC="Linaro Aarch64 GNU Linux Binary Toolchain"
 PKG_TOOLCHAIN="manual"
