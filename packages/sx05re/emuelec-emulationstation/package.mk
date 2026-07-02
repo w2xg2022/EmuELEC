@@ -44,6 +44,20 @@ pre_configure_target() {
 # 不是.po翻譯檔的內容(跟上面.po下載是兩回事)，"正體中文"應改為"繁體中文"。
   sed -i 's/"正體中文"/"繁體中文"/' es-app/src/guis/GuiMenu.cpp
 
+# NOTE(w2xg2022): 手把設定介面(GuiInputConfig.cpp的_ENABLEEMUELEC分支，這是
+# 實際編譯生效的那組，不是#else那組)原本a/b/x/y對應的方位標籤是任天堂式
+# (A=右/B=下/X=上/Y=左)，跟es4armbian踩過的坑一樣，跟用戶實際Xbox式印刷布局
+# 手把(物理A=下/B=右/X=左/Y=上，用/dev/input/js0原始位元組實測確認)相反，
+# 設定手把時對不上。改成跟es4armbian一致的Xbox式標籤：a=SOUTH/b=EAST/
+# x=WEST/y=NORTH。用行首按鍵名稱(a/b/x/y各自唯一)當比對依據，避免replace
+# 順序互相污染。
+  sed -i \
+    -e 's|{ "a",                false, "BUTTON A / EAST",    ":/help/buttons_east.svg" }|{ "a",                false, "BUTTON A / SOUTH",   ":/help/buttons_south.svg" }|' \
+    -e 's|{ "b",                true,  "BUTTON B / SOUTH",   ":/help/buttons_south.svg" }|{ "b",                true,  "BUTTON B / EAST",    ":/help/buttons_east.svg" }|' \
+    -e 's|{ "x",                true,  "BUTTON X / NORTH",   ":/help/buttons_north.svg" }|{ "x",                true,  "BUTTON X / WEST",    ":/help/buttons_west.svg" }|' \
+    -e 's|{ "y",                true,  "BUTTON Y / WEST",    ":/help/buttons_west.svg" }|{ "y",                true,  "BUTTON Y / NORTH",   ":/help/buttons_north.svg" }|' \
+    es-core/src/guis/GuiInputConfig.cpp
+
 PKG_CMAKE_OPTS_TARGET=" -DENABLE_EMUELEC=1 -DDISABLE_KODI=1 -DENABLE_FILEMANAGER=1 -DGLES2=1 -DENABLE_TTS=1"
 
 # Read api_keys.txt if it exist to add the required keys for cheevos, thegamesdb and screenscrapper. You need to get your own API keys. 
