@@ -7,7 +7,10 @@ PKG_VERSION="1.46.6"
 PKG_SHA256="a77517f19ff5e4e97ede63536566865dd5d48654e13fc145f5f2249ef7c4f4fc"
 PKG_LICENSE="GPL"
 PKG_SITE="http://e2fsprogs.sourceforge.net/"
-PKG_URL="https://www.kernel.org/pub/linux/kernel/people/tytso/${PKG_NAME}/v${PKG_VERSION}/${PKG_NAME}-${PKG_VERSION}.tar.xz"
+# NOTE(w2xg2022): kernel.org回404，改用repo內自帶鏡像(源碼取自VM本地sources/
+# 快取，sha256驗證跟本檔案記錄的完全一致，正版原始檔案)。這是initramfs開機
+# 階段用到的關鍵工具，優先修好避免雲編譯卡在這裡。
+PKG_URL="https://raw.githubusercontent.com/w2xg2022/EmuELEC/main/packages/sysutils/e2fsprogs/${PKG_NAME}-${PKG_VERSION}.tar.xz"
 PKG_DEPENDS_HOST="toolchain:host"
 PKG_DEPENDS_TARGET="toolchain"
 PKG_DEPENDS_INIT="toolchain"

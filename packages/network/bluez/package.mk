@@ -7,7 +7,10 @@ PKG_VERSION="5.72"
 PKG_SHA256="499d7fa345a996c1bb650f5c6749e1d929111fa6ece0be0e98687fee6124536e"
 PKG_LICENSE="GPL"
 PKG_SITE="http://www.bluez.org/"
-PKG_URL="https://www.kernel.org/pub/linux/bluetooth/${PKG_NAME}-${PKG_VERSION}.tar.xz"
+# NOTE(w2xg2022): kernel.org回404，改用repo內自帶鏡像(源碼取自VM本地sources/
+# 快取，sha256驗證跟本檔案記錄的完全一致，正版原始檔案)。這是藍牙核心套件，
+# 跟後續藍牙適配工作直接相關，優先修好避免雲編譯卡在這裡。
+PKG_URL="https://raw.githubusercontent.com/w2xg2022/EmuELEC/main/packages/network/bluez/${PKG_NAME}-${PKG_VERSION}.tar.xz"
 PKG_DEPENDS_TARGET="toolchain dbus glib readline systemd"
 PKG_LONGDESC="Bluetooth Tools and System Daemons for Linux."
 PKG_TOOLCHAIN="autotools"

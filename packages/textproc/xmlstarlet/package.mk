@@ -6,7 +6,11 @@ PKG_VERSION="1.6.1"
 PKG_SHA256="15d838c4f3375332fd95554619179b69e4ec91418a3a5296e7c631b7ed19e7ca"
 PKG_LICENSE="MIT"
 PKG_SITE="http://xmlstar.sourceforge.net"
-PKG_URL="http://netcologne.dl.sourceforge.net/project/xmlstar/${PKG_NAME}/${PKG_VERSION}/${PKG_NAME}-${PKG_VERSION}.tar.gz"
+# NOTE(w2xg2022): netcologne.dl.sourceforge.net連線異常，改用repo內自帶鏡像
+# (源碼取自VM本地sources/快取，sha256驗證跟本檔案記錄的完全一致，正版原始
+# 檔案)。這是host端建置工具，很多套件的PKG_DEPENDS_HOST都靠它，抓不到會讓
+# 整個建置崩潰，優先修好。
+PKG_URL="https://raw.githubusercontent.com/w2xg2022/EmuELEC/main/packages/textproc/xmlstarlet/${PKG_NAME}-${PKG_VERSION}.tar.gz"
 PKG_DEPENDS_HOST="libxml2:host libxslt:host"
 PKG_DEPENDS_TARGET="toolchain libxml2 libxslt"
 PKG_LONGDESC="XMLStarlet is a command-line XML utility which allows the modification and validation of XML documents."
