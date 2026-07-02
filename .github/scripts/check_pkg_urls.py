@@ -21,7 +21,14 @@ from pathlib import Path
 REPO_ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else ".")
 
 VAR_RE = re.compile(r'^(PKG_NAME|PKG_VERSION|PKG_SITE|PKG_URL|PKG_GIT_CLONE_BRANCH)="([^"]*)"', re.M)
-PLACEHOLDER_RE = re.compile(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}')
+# package.mk裡變數引用有兩種寫法都要處理：${VAR}(有大括號)跟$VAR(沒有)，
+# 之前只比對${VAR}形式，漏掉$VAR這種寫法，導致一堆URL裡的$PKG_VERSION/
+# $PKG_NAME原封不動被送去curl，全部變成假的404(誤報)。
+SIMPLE_VAR_RE = re.compile(r'\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?')
+# bash參數展開(${VAR%pattern}、${VAR#pattern}、${VAR/a/b}等)跟指令替換$(...)
+# 沒辦法用簡單字串替換處理，偵測到就整個標記成無法靜態解析，不要用SIMPLE_VAR_RE
+# 硬套(會產生語意錯誤但看起來像是"已解析"的假URL，更難發現)。
+COMPLEX_RE = re.compile(r'\$\{[A-Za-z_][A-Za-z0-9_]*[^A-Za-z0-9_}]|\$\(')
 
 
 def resolve_url(pkgmk_text):
@@ -35,16 +42,21 @@ def resolve_url(pkgmk_text):
     if not url:
         return None, False
 
+    if COMPLEX_RE.search(url):
+        return url, True
+
     for _ in range(10):
         def sub(m):
             key = m.group(1)
             return vars_found.get(key, m.group(0))
-        new_url = PLACEHOLDER_RE.sub(sub, url)
+        new_url = SIMPLE_VAR_RE.sub(sub, url)
         if new_url == url:
             break
         url = new_url
+        if COMPLEX_RE.search(url):
+            return url, True
 
-    unresolved = bool(PLACEHOLDER_RE.search(url))
+    unresolved = bool(SIMPLE_VAR_RE.search(url))
     return url, unresolved
 
 
