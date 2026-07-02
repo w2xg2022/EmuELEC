@@ -6,7 +6,14 @@ PKG_VERSION="20250708"
 PKG_SHA256="6f3efee7f600c201f9b2d675889a4ccdb8cfe56e0d283641796ed10e64c72047"
 PKG_LICENSE="other"
 PKG_SITE="https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/"
-PKG_URL="https://cdn.kernel.org/pub/linux/kernel/firmware/linux-firmware-${PKG_VERSION}.tar.xz"
+# NOTE(w2xg2022): kernel.org已經不再保留這支特定日期的舊快照(cdn./mirrors.edge./
+# www./mirrors.四個kernel.org系子網域全部404，用GitHub Actions runner網路實測
+# 確認過)，換版本號有風險(新版linux-firmware可能重新整理/改名資料夾，導致
+# makeinstall_target逐條比對firmware清單那步直接build failure，且只有真的
+# 跑一次完整建置才會知道會不會踩到，不值得用一次建置去賭)。改用GitHub Release
+# asset存放這份506MB的驗證正版源碼(超過git單檔100MB限制沒辦法直接commit進
+# repo，Release asset走另一套儲存機制不佔用repo/git history空間，單檔上限2GB)。
+PKG_URL="https://github.com/w2xg2022/EmuELEC/releases/download/source-mirrors/${PKG_NAME}-${PKG_VERSION}.tar.xz"
 PKG_NEED_UNPACK="${PROJECT_DIR}/${PROJECT}/packages/${PKG_NAME} ${PROJECT_DIR}/${PROJECT}/devices/${DEVICE}/packages/${PKG_NAME}"
 PKG_LONGDESC="kernel-firmware: kernel related firmware"
 PKG_TOOLCHAIN="manual"
