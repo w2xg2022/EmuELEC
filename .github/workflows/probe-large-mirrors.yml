@@ -1,0 +1,54 @@
+name: Probe mirrors for large package sources (one-off)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe kernel-firmware candidates (need sha256=6f3efee7f600c201f9b2d675889a4ccdb8cfe56e0d283641796ed10e64c72047)
+        run: |
+          urls=(
+            "https://cdn.kernel.org/pub/linux/kernel/firmware/linux-firmware-20250708.tar.xz"
+            "https://mirrors.edge.kernel.org/pub/linux/kernel/firmware/linux-firmware-20250708.tar.xz"
+            "https://www.kernel.org/pub/linux/kernel/firmware/linux-firmware-20250708.tar.xz"
+            "https://mirrors.kernel.org/pub/linux/kernel/firmware/linux-firmware-20250708.tar.xz"
+          )
+          for u in "${urls[@]}"; do
+            echo "=== $u ==="
+            code=$(curl -sS -o /dev/null -w "%{http_code} size=%{size_download}" -L --max-time 20 -I "$u" || echo "curl-error")
+            echo "  HEAD: $code"
+          done
+
+      - name: Probe gcc7-linaro-aarch64-elf candidates (need sha256=73689fb3e71beeecebd6434d60efad4cb926153d48399e4d16fb45395d9c81a0)
+        run: |
+          urls=(
+            "https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-elf/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-elf.tar.xz"
+            "https://snapshots.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-elf/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-elf.tar.xz"
+            "https://sources.coreelec.org/gcc7-linaro-aarch64-elf/gcc7-linaro-aarch64-elf-7.5.0-2019.12.tar.xz"
+            "https://sources.libreelec.tv/mirror/gcc7-linaro-aarch64-elf/gcc7-linaro-aarch64-elf-7.5.0-2019.12.tar.xz"
+          )
+          for u in "${urls[@]}"; do
+            echo "=== $u ==="
+            code=$(curl -sS -o /dev/null -w "%{http_code} size=%{size_download}" -L --max-time 20 -I "$u" || echo "curl-error")
+            echo "  HEAD: $code"
+          done
+
+      - name: Download+verify any candidate that returned 200 (gcc7, small enough to fully fetch)
+        run: |
+          urls=(
+            "https://sources.coreelec.org/gcc7-linaro-aarch64-elf/gcc7-linaro-aarch64-elf-7.5.0-2019.12.tar.xz"
+            "https://sources.libreelec.tv/mirror/gcc7-linaro-aarch64-elf/gcc7-linaro-aarch64-elf-7.5.0-2019.12.tar.xz"
+            "https://snapshots.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-elf/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-elf.tar.xz"
+          )
+          for u in "${urls[@]}"; do
+            echo "=== downloading $u ==="
+            if curl -fsSL --max-time 120 -o /tmp/candidate.tar.xz "$u"; then
+              echo "  downloaded, sha256:"
+              sha256sum /tmp/candidate.tar.xz
+              rm -f /tmp/candidate.tar.xz
+            else
+              echo "  download failed"
+            fi
+          done
