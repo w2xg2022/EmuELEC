@@ -1,0 +1,14 @@
+name: Check package.mk source URLs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check all PKG_URL liveness from this runner's network
+        run: python3 .github/scripts/check_pkg_urls.py .
