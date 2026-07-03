@@ -79,6 +79,14 @@ jobs:
 
       - name: Install build dependencies
         run: |
+          # NOTE(w2xg2022): GitHub官方runner映像檔預裝了packages.microsoft.com
+          # (azure-cli/microsoft-prod)的apt來源，我們的建置完全用不到Azure CLI，
+          # 但這兩個來源偶爾會回403，apt-get update預設對任一來源失敗都回傳
+          # 非零結束碼，搭配GitHub Actions的run:預設bash -e，整個step會在這裡
+          # 直接中止(實測確認：ubuntu本身的套件列表都正常抓到，只有微軟這兩個
+          # 來源出問題)。跟我們自己的原始碼完全無關，建置前先移除這兩個用不到
+          # 的來源清單，避免apt-get update被它們拖垮。
+          sudo grep -rl 'packages.microsoft.com' /etc/apt/sources.list.d/ 2>/dev/null | xargs -r sudo rm -f
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
             gcc make git unzip wget xz-utils libsdl2-dev libsdl2-mixer-dev \
