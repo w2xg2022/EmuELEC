@@ -42,7 +42,11 @@ jobs:
   build:
     needs: prepare
     runs-on: ubuntu-22.04
-    timeout-minutes: 350
+    # NOTE(w2xg2022): GitHub代管runner有硬性6小時(360分鐘)執行上限，timeout-minutes
+    # 設更高也沒用，runner基礎設施會強制中止。實測跑到350分鐘進度497/639且過程中
+    # 完全沒有錯誤(純粹被逾時砍掉)，代表之前修的所有上游來源/編譯問題都真的解決了，
+    # 剩下的是單純"時間不夠"，靠下面新增的ccache跨次建置快取來解，不是硬幹拉長時間。
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
@@ -76,6 +80,21 @@ jobs:
           key: sources-${{ hashFiles('**/package.mk') }}
           restore-keys: |
             sources-
+
+      # NOTE(w2xg2022): GitHub代管runner有硬性6小時執行上限，實測跑滿360分鐘
+      # 進度到497/639且過程完全沒有錯誤(單純被逾時砍掉)，代表真正的瓶頸是
+      # "從零開始編譯太花時間"而不是哪裡壞掉。加ccache跨次建置快取(build system
+      # 本身已經在用ccache，位置固定在build.EmuELEC-${PROJECT}-${ARCH}-*/.ccache)，
+      # 讓下一次雲編譯能重複利用已編譯過的目標檔，逐次建置越跑越快，最終能在
+      # 6小時內跑完整個639個套件，而不是每次都從零開始編譯到一半就被砍。
+      # 5.3GB(VM本地實測)在GitHub Actions 10GB快取總配額內。
+      - name: Cache ccache compiled objects
+        uses: actions/cache@v4
+        with:
+          path: build.${{ env.DISTRO }}-${{ env.DEVICE }}.${{ env.ARCH }}-*/.ccache
+          key: ccache-${{ env.PROJECT }}-${{ env.DEVICE }}-${{ matrix.model }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-${{ env.PROJECT }}-${{ env.DEVICE }}-${{ matrix.model }}-
 
       - name: Install build dependencies
         run: |
