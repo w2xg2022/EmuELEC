@@ -7,7 +7,9 @@ PKG_VERSION="2.14.1"
 PKG_SHA256="ae480e9ca34382790312ff062c625ec70df94d6d9a9366e2b2b3d525f7f90387"
 PKG_LICENSE="OSS"
 PKG_SITE="https://www.freedesktop.org/wiki/Software/fontconfig/"
-PKG_URL="https://www.freedesktop.org/software/fontconfig/release/${PKG_NAME}-${PKG_VERSION}.tar.gz"
+# NOTE(w2xg2022): freedesktop.org對GitHub Actions runner的請求持續回418(疑似
+# 反爬蟲擋定，多次實測確認)，改用VM本地已快取驗證過的原始碼(2.1MB)直接鏡像進repo。
+PKG_URL="https://raw.githubusercontent.com/w2xg2022/EmuELEC/main/packages/x11/other/fontconfig/${PKG_NAME}-${PKG_VERSION}.tar.gz"
 PKG_DEPENDS_TARGET="toolchain util-linux util-macros freetype libxml2 zlib expat"
 PKG_LONGDESC="Fontconfig is a library for font customization and configuration."
 PKG_TOOLCHAIN="configure"

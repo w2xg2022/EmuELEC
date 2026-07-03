@@ -7,7 +7,9 @@ PKG_VERSION="16.1"
 PKG_SHA256="8eef32ce91d47979f95fd9a935e738cd7eb7463430dabc72863251751e504ae4"
 PKG_LICENSE="GPL"
 PKG_SITE="http://pulseaudio.org/"
-PKG_URL="http://www.freedesktop.org/software/pulseaudio/releases/${PKG_NAME}-${PKG_VERSION}.tar.xz"
+# NOTE(w2xg2022): freedesktop.org對GitHub Actions runner的請求持續回418(疑似
+# 反爬蟲擋定，多次實測確認)，改用VM本地已快取驗證過的原始碼(1.5MB)直接鏡像進repo。
+PKG_URL="https://raw.githubusercontent.com/w2xg2022/EmuELEC/main/packages/audio/pulseaudio/${PKG_NAME}-${PKG_VERSION}.tar.xz"
 PKG_DEPENDS_TARGET="toolchain alsa-lib dbus libcap libsndfile libtool openssl soxr speexdsp systemd glib:host glib"
 PKG_LONGDESC="PulseAudio is a sound system for POSIX OSes, meaning that it is a proxy for your sound applications."
 

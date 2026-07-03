@@ -7,7 +7,9 @@ PKG_VERSION="1.13.0"
 PKG_SHA256="9edf2006cc86a5055279647c38ec923d11a821ee4dc2c3033e8d20e8ee237cd9"
 PKG_LICENSE="MIT"
 PKG_SITE="http://www.freedesktop.org/wiki/Software/libevdev/"
-PKG_URL="http://www.freedesktop.org/software/libevdev/${PKG_NAME}-${PKG_VERSION}.tar.xz"
+# NOTE(w2xg2022): freedesktop.org對GitHub Actions runner的請求持續回418(疑似
+# 反爬蟲擋定，多次實測確認)，改用VM本地已快取驗證過的原始碼(441KB)直接鏡像進repo。
+PKG_URL="https://raw.githubusercontent.com/w2xg2022/EmuELEC/main/packages/sysutils/libevdev/${PKG_NAME}-${PKG_VERSION}.tar.xz"
 PKG_DEPENDS_TARGET="toolchain"
 PKG_LONGDESC="libevdev is a wrapper library for evdev devices."
 PKG_BUILD_FLAGS="+pic"
