@@ -73,28 +73,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cache downloaded sources
-        uses: actions/cache@v4
-        with:
-          path: sources
-          key: sources-${{ hashFiles('**/package.mk') }}
-          restore-keys: |
-            sources-
-
-      # NOTE(w2xg2022): GitHub代管runner有硬性6小時執行上限，實測跑滿360分鐘
-      # 進度到497/639且過程完全沒有錯誤(單純被逾時砍掉)，代表真正的瓶頸是
-      # "從零開始編譯太花時間"而不是哪裡壞掉。加ccache跨次建置快取(build system
-      # 本身已經在用ccache，位置固定在build.EmuELEC-${PROJECT}-${ARCH}-*/.ccache)，
-      # 讓下一次雲編譯能重複利用已編譯過的目標檔，逐次建置越跑越快，最終能在
-      # 6小時內跑完整個639個套件，而不是每次都從零開始編譯到一半就被砍。
-      # 5.3GB(VM本地實測)在GitHub Actions 10GB快取總配額內。
-      - name: Cache ccache compiled objects
-        uses: actions/cache@v4
-        with:
-          path: build.${{ env.DISTRO }}-${{ env.DEVICE }}.${{ env.ARCH }}-*/.ccache
-          key: ccache-${{ env.PROJECT }}-${{ env.DEVICE }}-${{ matrix.model }}-${{ github.run_id }}
-          restore-keys: |
-            ccache-${{ env.PROJECT }}-${{ env.DEVICE }}-${{ matrix.model }}-
+      # NOTE(w2xg2022): 之前用actions/cache存sources/ccache，但GitHub的6小時硬上限
+      # 是暴力砍斷整個job，來不及跑cache的儲存(post)步驟，導致快取永遠存不進去，
+      # 每次都從零開始編到差不多同一個進度又被砍，等於白做。改用GitHub Release
+      # 當作「建置接力狀態」的存放點：把工具鏈+已裝好的套件+進度標記(.stamps)
+      # 打包成一個檔案存進Release，不受6小時job生命週期限制，下一輪開工前先
+      # 還原回來，讓建置系統(靠.stamps判斷哪些套件已經裝好)自動接著編，不用
+      # 重頭來過。真正確保「存檔」這步會執行，Build步驟本身會在時間快到前
+      # 自己主動停下來(見下面的timeout設計)，而不是被GitHub暴力砍斷。
+      - name: Restore build checkpoint from Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RELEASE_TAG="build-state-${{ matrix.model }}"
+          if gh release download "${RELEASE_TAG}" -p 'state.tar.zst' -O /tmp/state.tar.zst --repo ${{ github.repository }} 2>/dev/null; then
+            echo "找到上一輪的建置接力狀態，還原中..."
+            ls -lh /tmp/state.tar.zst
+            tar -I zstd -xf /tmp/state.tar.zst -C "${{ github.workspace }}"
+            echo "還原完成："
+            du -sh build.*/toolchain build.*/install_pkg build.*/.stamps 2>/dev/null
+          else
+            echo "沒有找到之前的接力狀態，從零開始建置"
+          fi
 
       - name: Install build dependencies
         run: |
@@ -114,7 +114,7 @@ jobs:
             fonts-droid-fallback libvlc-dev libvlccore-dev vlc-bin texinfo premake4 \
             golang libssl-dev curl patchelf xmlstarlet default-jre xsltproc \
             libvpx-dev rdfind tzdata xfonts-utils lzop \
-            libparse-yapp-perl gperf libxml-parser-perl patchutils
+            libparse-yapp-perl gperf libxml-parser-perl patchutils zstd
           sudo apt-get clean
 
       - name: Build (${{ matrix.model }})
@@ -135,6 +135,12 @@ jobs:
           ) > build-${{ matrix.model }}.log 2>&1 &
           BUILD_PID=$!
 
+          # NOTE(w2xg2022): GitHub的6小時硬上限會暴力砍斷整個job，來不及執行
+          # 後面「打包存檔」的步驟。改成建置本身在時間快到前(5小時40分)自己
+          # 主動送SIGTERM讓make自然收尾、釋放檔案鎖，留20分鐘給存檔/上傳用。
+          MAX_BUILD_SECONDS=20400
+          START_TS=$(date +%s)
+
           # 背景磁碟監控：可用空間<8GB時，自動清理已完成套件的build/原始編譯目錄
           # (保留install_pkg/成果，已驗證安全，最終映像組裝讀install_pkg不是build/)
           # NOTE(w2xg2022): maximize-build-space把大容量磁碟掛在GITHUB_WORKSPACE(這裡的CWD)，
@@ -143,7 +149,8 @@ jobs:
             sleep 60
             BUILD_DIR=$(ls -d build.*/ 2>/dev/null | head -1)
             AVAIL_GB=$(df --output=avail . | tail -1 | awk '{print int($1/1024/1024)}')
-            echo "[monitor] $(date +%T) disk avail: ${AVAIL_GB}GB"
+            ELAPSED=$(( $(date +%s) - START_TS ))
+            echo "[monitor] $(date +%T) disk avail: ${AVAIL_GB}GB, elapsed: ${ELAPSED}s"
             if [ "$AVAIL_GB" -lt 15 ] && [ -n "$BUILD_DIR" ] && [ -d "${BUILD_DIR}install_pkg" ]; then
               echo "[monitor] disk low, cleaning completed packages' build/ dirs..."
               CLEANED=0
@@ -156,12 +163,49 @@ jobs:
               echo "[monitor] cleaned ${CLEANED} package build dirs"
               df -h .
             fi
+            if [ "$ELAPSED" -ge "$MAX_BUILD_SECONDS" ]; then
+              echo "[monitor] 時間快到6小時上限，主動停止建置以保留接力狀態..."
+              kill -TERM $BUILD_PID 2>/dev/null
+              sleep 15
+              kill -KILL $BUILD_PID 2>/dev/null
+              break
+            fi
           done
 
           wait $BUILD_PID
           BUILD_EXIT=$?
           tail -100 build-${{ matrix.model }}.log
+          echo "checkpoint_reason=timeout_self_stop_or_finished" >> "$GITHUB_OUTPUT" 2>/dev/null || true
           exit $BUILD_EXIT
+        continue-on-error: true
+        id: build_step
+
+      - name: Save build checkpoint to Release (always)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BUILD_DIR=$(ls -d build.*/ 2>/dev/null | head -1)
+          if [ -z "$BUILD_DIR" ]; then
+            echo "找不到建置資料夾，跳過存檔"
+            exit 0
+          fi
+          echo "打包接力狀態(工具鏈+已裝套件+進度標記)..."
+          tar -I 'zstd -T0 -3' -cf /tmp/state.tar.zst \
+            "${BUILD_DIR}toolchain" "${BUILD_DIR}install_pkg" "${BUILD_DIR}.stamps" 2>&1 | tail -20
+          ls -lh /tmp/state.tar.zst
+          RELEASE_TAG="build-state-${{ matrix.model }}"
+          gh release view "${RELEASE_TAG}" --repo ${{ github.repository }} >/dev/null 2>&1 || \
+            gh release create "${RELEASE_TAG}" --repo ${{ github.repository }} \
+              --title "建置接力狀態(自動，${{ matrix.model }})" \
+              --notes "自動保存的建置中間狀態，供下一輪雲編譯接續使用，不是可安裝的韌體。"
+          gh release upload "${RELEASE_TAG}" /tmp/state.tar.zst --repo ${{ github.repository }} --clobber
+
+      - name: Fail job if build did not actually succeed
+        if: steps.build_step.outcome != 'success'
+        run: |
+          echo "本輪建置未完整跑完(逾時自停或真的失敗)，接力狀態已存檔，等下一輪繼續。"
+          exit 1
 
       - name: Collect artifacts
         id: collect
