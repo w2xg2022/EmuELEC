@@ -86,21 +86,24 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           RELEASE_TAG="build-state-${{ matrix.model }}"
-          if gh release download "${RELEASE_TAG}" -p 'state.tar.zst' -O /tmp/state.tar.zst --repo ${{ github.repository }} 2>/dev/null; then
+          # NOTE(w2xg2022): 下載目標也要放大容量分區，不能放/tmp(小分區)——
+          # 接力狀態檔約好幾GB，下載到/tmp會把小分區塞爆下載失敗。
+          STATE_FILE="${{ github.workspace }}/state.tar.zst"
+          if gh release download "${RELEASE_TAG}" -p 'state.tar.zst' -O "${STATE_FILE}" --repo ${{ github.repository }} 2>/dev/null; then
             echo "找到上一輪的建置接力狀態，先驗證完整性..."
-            ls -lh /tmp/state.tar.zst
-            # NOTE(w2xg2022): 存檔如果被6小時硬牆砍到一半，上傳的會是殘缺的zstd
-            # 串流(premature end)。還原前先用zstd -t驗證，損壞就丟棄從零開始，
-            # 絕不能拿半殘的狀態去接續(.stamps會誤判某些套件已裝好，但檔案其實
-            # 不完整，導致後面編譯出莫名其妙的錯)。
-            if zstd -t /tmp/state.tar.zst 2>/dev/null; then
+            ls -lh "${STATE_FILE}"
+            # 存檔如果被砍到一半，會是殘缺的zstd串流(premature end)。還原前先用
+            # zstd -t驗證，損壞就丟棄從零開始，絕不能拿半殘的狀態去接續(.stamps
+            # 會誤判某些套件已裝好，但檔案其實不完整，導致後面編出莫名其妙的錯)。
+            if zstd -t "${STATE_FILE}" 2>/dev/null; then
               echo "完整性OK，還原中..."
-              tar -I zstd -xf /tmp/state.tar.zst -C "${{ github.workspace }}"
+              tar -I zstd -xf "${STATE_FILE}" -C "${{ github.workspace }}"
+              rm -f "${STATE_FILE}"
               echo "還原完成："
               du -sh build.*/toolchain build.*/install_pkg build.*/.stamps 2>/dev/null
             else
-              echo "接力狀態檔損壞(上一輪存檔被逾時砍斷)，丟棄，從零開始建置"
-              rm -f /tmp/state.tar.zst
+              echo "接力狀態檔損壞(上一輪存檔被砍斷)，丟棄，從零開始建置"
+              rm -f "${STATE_FILE}"
               rm -rf build.*/
             fi
           else
@@ -198,21 +201,41 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -o pipefail
           BUILD_DIR=$(ls -d build.*/ 2>/dev/null | head -1)
           if [ -z "$BUILD_DIR" ]; then
             echo "找不到建置資料夾，跳過存檔"
             exit 0
           fi
-          echo "打包接力狀態(工具鏈+已裝套件+進度標記)..."
-          tar -I 'zstd -T0 -3' -cf /tmp/state.tar.zst \
-            "${BUILD_DIR}toolchain" "${BUILD_DIR}install_pkg" "${BUILD_DIR}.stamps" 2>&1 | tail -20
-          ls -lh /tmp/state.tar.zst
+          # NOTE(w2xg2022): 前兩輪存檔都產出殘缺的~47MB檔，真兇是把11GB打包寫到
+          # /tmp(在runner的小分區)，寫到47MB就把小分區塞爆、tar失敗，但原本結尾
+          # 接了「| tail」讓管線結束碼變成tail的(永遠成功)，把tar的失敗整個蓋掉、
+          # 誤報success。改成：(1)寫到大容量分區(workspace，跟52GB建置目錄同一顆)；
+          # (2)set -o pipefail + 明確檢查tar結束碼，tar真的失敗就讓步驟報錯，不再
+          # 上傳殘檔污染下一輪。
+          STATE_FILE="${{ github.workspace }}/state.tar.zst"
+          # 打包前先清掉build/(各套件編譯暫存工作目錄，很肥)，我們存檔只需要
+          # toolchain+install_pkg+.stamps，不需要build/，清掉能騰出空間寫打包檔，
+          # 且不影響接力(下一輪靠.stamps判斷哪些已裝好，已裝好的不會重建build/)。
+          echo "清理build/暫存工作目錄以騰出空間..."
+          rm -rf "${BUILD_DIR}build"
+          echo "打包接力狀態(工具鏈+已裝套件+進度標記)到大容量分區..."
+          df -h "${{ github.workspace }}"
+          if ! tar -I 'zstd -T0 -3' -cf "${STATE_FILE}" \
+               "${BUILD_DIR}toolchain" "${BUILD_DIR}install_pkg" "${BUILD_DIR}.stamps"; then
+            echo "打包失敗(多半是空間不足)，不上傳殘檔"
+            rm -f "${STATE_FILE}"
+            exit 1
+          fi
+          ls -lh "${STATE_FILE}"
+          echo "本地二次驗證完整性..."
+          zstd -t "${STATE_FILE}" || { echo "打包出來的檔自檢就損壞，不上傳"; rm -f "${STATE_FILE}"; exit 1; }
           RELEASE_TAG="build-state-${{ matrix.model }}"
           gh release view "${RELEASE_TAG}" --repo ${{ github.repository }} >/dev/null 2>&1 || \
             gh release create "${RELEASE_TAG}" --repo ${{ github.repository }} \
               --title "建置接力狀態(自動，${{ matrix.model }})" \
               --notes "自動保存的建置中間狀態，供下一輪雲編譯接續使用，不是可安裝的韌體。"
-          gh release upload "${RELEASE_TAG}" /tmp/state.tar.zst --repo ${{ github.repository }} --clobber
+          gh release upload "${RELEASE_TAG}" "${STATE_FILE}" --repo ${{ github.repository }} --clobber
 
       - name: Fail job if build did not actually succeed
         if: steps.build_step.outcome != 'success'
