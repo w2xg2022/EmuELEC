@@ -86,15 +86,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           RELEASE_TAG="build-state-${{ matrix.model }}"
-          # NOTE(w2xg2022): 下載目標也要放大容量分區，不能放/tmp(小分區)——
-          # 接力狀態檔約好幾GB，下載到/tmp會把小分區塞爆下載失敗。
+          # NOTE(w2xg2022): 接力狀態被切成多塊(state.tar.zst.partNN，各<2GiB繞開
+          # GitHub單一asset上限)。下載全部分塊到大容量分區(不能放/tmp小分區)，
+          # 照順序cat拼回完整檔再驗證。
           STATE_FILE="${{ github.workspace }}/state.tar.zst"
-          if gh release download "${RELEASE_TAG}" -p 'state.tar.zst' -O "${STATE_FILE}" --repo ${{ github.repository }} 2>/dev/null; then
-            echo "找到上一輪的建置接力狀態，先驗證完整性..."
+          STATE_DIR="${{ github.workspace }}/_state_parts"
+          mkdir -p "${STATE_DIR}"
+          if gh release download "${RELEASE_TAG}" -p 'state.tar.zst.part*' -D "${STATE_DIR}" --repo ${{ github.repository }} 2>/dev/null && ls "${STATE_DIR}"/state.tar.zst.part* >/dev/null 2>&1; then
+            echo "找到上一輪的接力狀態分塊，拼回中..."
+            ls -lh "${STATE_DIR}"/state.tar.zst.part*
+            cat "${STATE_DIR}"/state.tar.zst.part* > "${STATE_FILE}"
+            rm -rf "${STATE_DIR}"
             ls -lh "${STATE_FILE}"
-            # 存檔如果被砍到一半，會是殘缺的zstd串流(premature end)。還原前先用
-            # zstd -t驗證，損壞就丟棄從零開始，絕不能拿半殘的狀態去接續(.stamps
-            # 會誤判某些套件已裝好，但檔案其實不完整，導致後面編出莫名其妙的錯)。
+            # 拼回後先用zstd -t驗證完整性，損壞(存檔曾被砍/分塊缺失)就丟棄從零開始，
+            # 絕不能拿半殘的狀態去接續(.stamps會誤判某些套件已裝好但檔案其實不完整)。
             if zstd -t "${STATE_FILE}" 2>/dev/null; then
               echo "完整性OK，還原中..."
               tar -I zstd -xf "${STATE_FILE}" -C "${{ github.workspace }}"
@@ -102,12 +107,13 @@ jobs:
               echo "還原完成："
               du -sh build.*/toolchain build.*/install_pkg build.*/.stamps 2>/dev/null
             else
-              echo "接力狀態檔損壞(上一輪存檔被砍斷)，丟棄，從零開始建置"
+              echo "接力狀態拼回後損壞，丟棄，從零開始建置"
               rm -f "${STATE_FILE}"
               rm -rf build.*/
             fi
           else
             echo "沒有找到之前的接力狀態，從零開始建置"
+            rm -rf "${STATE_DIR}"
           fi
 
       - name: Install build dependencies
@@ -230,12 +236,27 @@ jobs:
           ls -lh "${STATE_FILE}"
           echo "本地二次驗證完整性..."
           zstd -t "${STATE_FILE}" || { echo "打包出來的檔自檢就損壞，不上傳"; rm -f "${STATE_FILE}"; exit 1; }
+          # NOTE(w2xg2022): GitHub單一Release asset硬上限2GiB，實測2.5GB整包上傳
+          # 直接HTTP 422 Validation Failed。且接力狀態會隨建置進度越來越大，只會
+          # 更超標。改成切成1900MiB(安全低於2GiB)的多塊(state.tar.zst.partNN)分別
+          # 上傳，還原時再照順序cat拼回。上傳前先刪掉Release上所有舊的state分塊，
+          # 避免上一輪殘留的多餘分塊(例如上輪3塊這輪2塊，第3塊沒被覆蓋)污染拼接。
+          rm -f "${STATE_FILE}".part*
+          split -b 1900M -d -a 2 "${STATE_FILE}" "${STATE_FILE}.part"
+          rm -f "${STATE_FILE}"
+          ls -lh "${{ github.workspace }}"/state.tar.zst.part*
           RELEASE_TAG="build-state-${{ matrix.model }}"
           gh release view "${RELEASE_TAG}" --repo ${{ github.repository }} >/dev/null 2>&1 || \
             gh release create "${RELEASE_TAG}" --repo ${{ github.repository }} \
               --title "建置接力狀態(自動，${{ matrix.model }})" \
-              --notes "自動保存的建置中間狀態，供下一輪雲編譯接續使用，不是可安裝的韌體。"
-          gh release upload "${RELEASE_TAG}" "${STATE_FILE}" --repo ${{ github.repository }} --clobber
+              --notes "自動保存的建置中間狀態(切塊)，供下一輪雲編譯接續使用，不是可安裝的韌體。"
+          for a in $(gh release view "${RELEASE_TAG}" --repo ${{ github.repository }} --json assets -q '.assets[].name' 2>/dev/null); do
+            case "$a" in state.tar.zst*) echo "刪除舊分塊 $a"; gh release delete-asset "${RELEASE_TAG}" "$a" --repo ${{ github.repository }} --yes || true;; esac
+          done
+          for p in "${{ github.workspace }}"/state.tar.zst.part*; do
+            echo "上傳 $(basename "$p") ..."
+            gh release upload "${RELEASE_TAG}" "$p" --repo ${{ github.repository }} --clobber
+          done
 
       - name: Fail job if build did not actually succeed
         if: steps.build_step.outcome != 'success'
