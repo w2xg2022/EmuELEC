@@ -657,25 +657,36 @@ declare -A EE_GAMEBTN_CORENAME=(
 )
 EE_GAMEBTN_CORENAME_VAL="${EE_GAMEBTN_CORENAME[${CORE}]}"
 if [[ -n "${EE_GAMEBTN_CORENAME_VAL}" ]]; then
-    # 這個對調本身是為了修正PS/PSP等幾何符號系統按鍵位置錯亂的bug(實機驗證過)，
-    # 預設開啟(位置對齊)，未設定過(es_settings.cfg還沒這個key，回傳空字串)時
-    # 一律視為開啟，只有使用者明確在ES設定畫面關掉(存成"false")才關閉，
-    # 避免"預設是壞的、要使用者自己發現並手動修"這種糟糕的預設體驗。
-    EE_INVERT_GAME_BTN=$(get_es_setting bool InvertGameButtons)
-    [[ "${EE_INVERT_GAME_BTN}" == "false" ]] || EE_INVERT_GAME_BTN="true"
+    # NOTE(w2xg2022): 配合es4all的ES把「遊戲內按鍵對調」拆成兩個獨立設定，膠水
+    # 也拆開分別套用(以前只有InvertGameButtons、一開就AB+XY一起翻，那其實是bug：
+    # XY不該預設跟著翻)：
+    #   InvertGameButtons -> 只翻 A/B (RetroPad: A=8,B=0，翻成 a=0,b=8)，預設true
+    #     (跟es4all Settings一致；偵測後=!mABInverted，位置對齊修正PS/PSP手感)
+    #   InvertXYButtons   -> 只翻 X/Y (RetroPad: X=9,Y=1，翻成 x=1,y=9)，預設false
+    #     (跟es4all Settings一致；偵測後=mXYInverted)
+    # 不翻的那組就不寫對應行(RA預設本來就是A=8/B=0/X=9/Y=1，正身)。兩組共用同一個
+    # BEGIN/END InvertGameButtons標記包住(方便一次移除舊區塊，跨新舊版本都相容)。
+    EE_INVERT_AB=$(get_es_setting bool InvertGameButtons)
+    [[ "${EE_INVERT_AB}" == "false" ]] || EE_INVERT_AB="true"     # 預設true
+    EE_INVERT_XY=$(get_es_setting bool InvertXYButtons)
+    [[ "${EE_INVERT_XY}" == "true" ]] || EE_INVERT_XY="false"     # 預設false
     EE_RMP_DIR="/storage/.config/retroarch/config/remappings/${EE_GAMEBTN_CORENAME_VAL}"
     EE_RMP_FILE="${EE_RMP_DIR}/${EE_GAMEBTN_CORENAME_VAL}.rmp"
     if [[ -f "${EE_RMP_FILE}" ]]; then
         sed -i '/^# BEGIN InvertGameButtons$/,/^# END InvertGameButtons$/d' "${EE_RMP_FILE}"
     fi
-    if [[ "${EE_INVERT_GAME_BTN}" == "true" ]]; then
+    if [[ "${EE_INVERT_AB}" == "true" || "${EE_INVERT_XY}" == "true" ]]; then
         mkdir -p "${EE_RMP_DIR}"
         {
             echo "# BEGIN InvertGameButtons"
-            echo 'input_player1_btn_a = "0"'
-            echo 'input_player1_btn_b = "8"'
-            echo 'input_player1_btn_x = "1"'
-            echo 'input_player1_btn_y = "9"'
+            if [[ "${EE_INVERT_AB}" == "true" ]]; then
+                echo 'input_player1_btn_a = "0"'
+                echo 'input_player1_btn_b = "8"'
+            fi
+            if [[ "${EE_INVERT_XY}" == "true" ]]; then
+                echo 'input_player1_btn_x = "1"'
+                echo 'input_player1_btn_y = "9"'
+            fi
             echo "# END InvertGameButtons"
         } >> "${EE_RMP_FILE}"
     fi
