@@ -146,6 +146,14 @@ jobs:
                   rm -rf "${BD}.stamps/${p}"
                 fi
               done
+              # NOTE(w2xg2022): 平行編譯的delta只打包了install_pkg+.stamps，沒打包
+              # toolchain/sysroot的變動。所以在平行chunk裡當「核心依賴」編出來的函式庫
+              # (libpcap等)，它裝進sysroot的標頭/庫沒進base，後面編譯依賴它的套件
+              # (desmume需pcap.h)時就找不到。這類lib清stamp強制重編一次，重編會重新
+              # 把標頭裝回sysroot。發現一個補一個。
+              for p in libpcap; do
+                [ -d "${BD}.stamps/${p}" ] && { echo "強制重編sysroot依賴lib: ${p}"; rm -rf "${BD}.stamps/${p}"; }
+              done
             else
               echo "接力狀態拼回後損壞，丟棄，從零開始建置"
               rm -f "${STATE_FILE}"
