@@ -3,73 +3,26 @@
 
 PKG_NAME="mame"
 PKG_VERSION="6cdc40fc53ba5574073d4009b531fda07156ff49"
-PKG_SHA256="ea494a44d69e7a075e6271e7a9a987aca208e3b018718984e20b5739eb8a2114"
 PKG_ARCH="any"
 PKG_LICENSE="GPLv2"
 PKG_SITE="https://github.com/libretro/mame"
-PKG_URL="https://github.com/libretro/mame.git"
+# NOTE(w2xg2022): 完整版mame是整个建置里最重的单一套件(实测云端CI单核编译2-3小时、
+# 源码/内存/磁盘消耗巨大，是平行编译时间的绝对瓶颈)。改用w2xg2022/EmuELEC-MAME
+# 预编译好的整包(mame_libretro.so + hiscore/hash/config等资料档的最终安装布局，
+# 已在本机完整建置验证)，主建置只下载解压、完全不重编。若mame本体或工具链ABI有变
+# 需要重编，到EmuELEC-MAME仓库手动触发rebuild再更新这里。
+PKG_URL=""
 PKG_DEPENDS_TARGET="toolchain zlib flac sqlite expat"
 PKG_SECTION="libretro"
 PKG_SHORTDESC="MAME - Multiple Arcade Machine Emulator"
-PKG_TOOLCHAIN="make"
-
-pre_configure_target() {
-
-PTR64="1"
-NOASM="0"
-
-if [ "${ARCH}" == "arm" ]; then
-  NOASM="1"
-fi
-
-PKG_MAKE_OPTS_TARGET="REGENIE=1 \
-		      VERBOSE=1 \
-		      NOWERROR=1 \
-		      OPENMP=1 \
-		      CROSS_BUILD=1 \
-		      TOOLS=0 \
-		      RETRO=1 \
-		      PTR64=${PTR64} \
-		      NOASM=${NOASM} \
-		      PYTHON_EXECUTABLE=python3 \
-		      CONFIG=libretro \
-		      LIBRETRO_OS=unix \
-		      LIBRETRO_CPU=arm64 \
-		      PLATFORM=arm64 \
-		      ARCH= \
-		      TARGET=mame \
-		      SUBTARGET=mame \
-		      OPTIMIZE=fast \
-		      OSD=retro \
-		      USE_SYSTEM_LIB_EXPAT=1 \
-		      USE_SYSTEM_LIB_ZLIB=1 \
-		      USE_SYSTEM_LIB_FLAC=1 \
-		      USE_SYSTEM_LIB_SQLITE3=1"
-
-export ARCHOPTS="-D__aarch64__ -DASMJIT_BUILD_X86"
-
-sed -i "s/-static-libstdc++//g" scripts/genie.lua
-
-unset ARCH
-unset DISTRO
-unset PROJECT
-
-}
-
-make_target() {
-  make ${PKG_MAKE_OPTS_TARGET} OVERRIDE_CC=${CC} OVERRIDE_CXX=${CXX} OVERRIDE_LD=${LD} AR=${AR} -j2
-}
+PKG_TOOLCHAIN="manual"
 
 makeinstall_target() {
-  mkdir -p ${INSTALL}/usr/lib/libretro
-  cp *.so ${INSTALL}/usr/lib/libretro/
-  mkdir -p ${INSTALL}/usr/config/retroarch/savefiles/mame/hi
-  cp plugins/hiscore/hiscore.dat ${INSTALL}/usr/config/retroarch/savefiles/mame/hi
-  mkdir -p ${INSTALL}/usr/config/emuelec/configs/mame
-  cp -rf ${PKG_DIR}/config/* ${INSTALL}/usr/config/emuelec/configs/mame
-  mkdir -p ${INSTALL}/usr/config/emuelec/configs/mame/hash
-  cp -rf $PKG_BUILD/hash/fmtowns_cd.xml ${INSTALL}/usr/config/emuelec/configs/mame/hash
-  cp -rf $PKG_BUILD/hash/apple*.xml ${INSTALL}/usr/config/emuelec/configs/mame/hash
-  mkdir -p ${INSTALL}/usr/bin
-  cp -rf ${PKG_DIR}/scripts/* ${INSTALL}/usr/bin
+  mkdir -p "${INSTALL}"
+  # 预编译整包内容是 ./usr/... 的最终安装布局，直接解压进 ${INSTALL}
+  curl -sL --retry 3 --fail \
+    https://github.com/w2xg2022/EmuELEC-MAME/releases/latest/download/mame_libretro_prebuilt.tar.gz \
+    | tar -xz -C "${INSTALL}"
+  # 确认关键档案有解出来，避免静默产出空壳
+  [ -f "${INSTALL}/usr/lib/libretro/mame_libretro.so" ] || die "mame 预编译包解压后找不到 mame_libretro.so"
 }
