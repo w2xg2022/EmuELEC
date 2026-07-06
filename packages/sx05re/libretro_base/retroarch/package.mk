@@ -183,6 +183,8 @@ makeinstall_target() {
   echo "content_show_images = \"false\"" >> ${INSTALL}/etc/retroarch.cfg
   echo "content_show_music = \"false\"" >> ${INSTALL}/etc/retroarch.cfg
   echo "content_show_video = \"false\"" >> ${INSTALL}/etc/retroarch.cfg
+  # NOTE(w2xg2022): 進RA選單時不播「載入內容」的動畫(会短暂展示游戏名称)，配合ROCKNIX体验
+  echo "menu_show_load_content_animation = \"false\"" >> ${INSTALL}/etc/retroarch.cfg
 
   # Updater
   if [ "${ARCH}" == "arm" ]; then
