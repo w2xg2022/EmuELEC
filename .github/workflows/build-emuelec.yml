@@ -7,9 +7,14 @@ on:
         description: '要编译的型号列表(空格分隔)，留空则用 repo variable MODELS'
         required: false
         default: ''
-  schedule:
-    # 每月1号 03:00 UTC 自动全部型号重新编译一次(跟上游同步)
-    - cron: '0 3 1 * *'
+  # NOTE(w2xg2022): 月度cron暂时停用——目前还在适配期(平行编译/接力机制调试中)，
+  # 先不让它自动触发以免干扰或浪费云端时数。适配稳定后把下面schedule取消注释即可
+  # 重新启用。启用后的逻辑已做好(见prepare的gate步骤)：仅在repo commit相对上次
+  # 成功建置有变动时才真的编，没变就整轮skip；有变也靠接力checkpoint+.stamps只重
+  # 编改动到的套件，不会每月从零全编。
+  # schedule:
+  #   # 每月1号 03:00 UTC
+  #   - cron: '0 3 1 * *'
 
 permissions:
   contents: write
@@ -25,6 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set.outputs.matrix }}
+      needed: ${{ steps.gate.outputs.needed }}
     steps:
       - id: set
         run: |
@@ -38,9 +44,30 @@ jobs:
           JSON=$(printf '%s\n' $MODELS | jq -R . | jq -s -c .)
           echo "matrix=$JSON" >> "$GITHUB_OUTPUT"
           echo "Models to build: $MODELS"
+      # NOTE(w2xg2022): 「代碼沒變就不編」閘門。手動觸發(workflow_dispatch)一律建置；
+      # 只有排程(schedule)觸發時，才比對現在的commit跟上次成功建置記錄的commit
+      # (存在built-commit這個Release的body)。一樣就整輪skip，省掉沒必要的月度重建。
+      - id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "手動觸發，一律建置"
+            echo "needed=yes" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          LAST=$(gh release view built-commit --repo ${{ github.repository }} --json body -q .body 2>/dev/null | tr -d '[:space:]')
+          NOW="${{ github.sha }}"
+          if [ -n "$LAST" ] && [ "$LAST" = "$NOW" ]; then
+            echo "代碼自上次成功建置以來未變($NOW)，跳過本次月度重建"
+            echo "needed=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "代碼有變(上次:${LAST:-無} 現在:$NOW)，執行建置"
+            echo "needed=yes" >> "$GITHUB_OUTPUT"
+          fi
 
   build:
     needs: prepare
+    if: needs.prepare.outputs.needed == 'yes'
     runs-on: ubuntu-22.04
     # NOTE(w2xg2022): GitHub代管runner有硬性6小時(360分鐘)執行上限，timeout-minutes
     # 設更高也沒用，runner基礎設施會強制中止。實測跑到350分鐘進度497/639且過程中
@@ -298,3 +325,18 @@ jobs:
           body: |
             自动云编译：${{ env.PROJECT }}/${{ env.DEVICE }} SUBDEVICE=${{ matrix.model }}
             触发方式：${{ github.event_name }}
+
+      # NOTE(w2xg2022): 只有真的完整編出韌體(success)才記錄本次commit到built-commit
+      # 這個Release的body，供下次schedule觸發時的gate比對「代碼有沒有變」。
+      - name: Record built commit
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view built-commit --repo ${{ github.repository }} >/dev/null 2>&1; then
+            gh release edit built-commit --repo ${{ github.repository }} --notes "${{ github.sha }}"
+          else
+            gh release create built-commit --repo ${{ github.repository }} \
+              --title "上次成功建置的commit(月度cron的gate用)" --notes "${{ github.sha }}"
+          fi
+          echo "已記錄本次成功建置的commit：${{ github.sha }}"
