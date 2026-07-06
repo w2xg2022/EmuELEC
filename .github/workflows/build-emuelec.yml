@@ -133,6 +133,19 @@ jobs:
               rm -f "${STATE_FILE}"
               echo "還原完成："
               du -sh build.*/toolchain build.*/install_pkg build.*/.stamps 2>/dev/null
+              # NOTE(w2xg2022): glibc/icu在「安裝階段」會回頭引用自己的build目錄
+              # (glibc: emuelec-emulationstation取charmaps/localedef; icu: --with-cross-build
+              # 要host build目錄)。checkpoint為省空間剝掉了build/，若還原的舊checkpoint
+              # 沒帶這兩個的build目錄，就清掉它們的.stamps強制重編一次(重編會重新產生
+              # build目錄)。之後的存檔會保留這兩個build目錄(見save步驟)，所以只有第一次
+              # 用舊checkpoint時會重編。
+              BD=$(ls -d build.*/ 2>/dev/null | head -1)
+              for p in glibc icu; do
+                if ! ls -d "${BD}build/${p}-"* >/dev/null 2>&1; then
+                  echo "checkpoint缺${p}的build目錄，清stamp強制重編一次(重新產生build目錄)"
+                  rm -rf "${BD}.stamps/${p}"
+                fi
+              done
             else
               echo "接力狀態拼回後損壞，丟棄，從零開始建置"
               rm -f "${STATE_FILE}"
@@ -204,6 +217,10 @@ jobs:
               echo "[monitor] disk low, cleaning completed packages' build/ dirs..."
               CLEANED=0
               for d in $(ls "${BUILD_DIR}install_pkg" 2>/dev/null); do
+                # NOTE(w2xg2022): glibc/icu的build目錄在後面套件的安裝階段還會被引用
+                # (glibc: ES取charmaps/localedef; icu: --with-cross-build)，不能清，
+                # 否則ES/icu-dependent套件安裝時找不到build目錄而失敗。
+                case "$d" in glibc-*|icu-*) continue;; esac
                 if [ -d "${BUILD_DIR}build/$d" ]; then
                   rm -rf "${BUILD_DIR}build/$d"
                   CLEANED=$((CLEANED+1))
@@ -247,15 +264,21 @@ jobs:
           # (2)set -o pipefail + 明確檢查tar結束碼，tar真的失敗就讓步驟報錯，不再
           # 上傳殘檔污染下一輪。
           STATE_FILE="${{ github.workspace }}/state.tar.zst"
-          # 打包前先清掉build/(各套件編譯暫存工作目錄，很肥)，我們存檔只需要
-          # toolchain+install_pkg+.stamps，不需要build/，清掉能騰出空間寫打包檔，
-          # 且不影響接力(下一輪靠.stamps判斷哪些已裝好，已裝好的不會重建build/)。
-          echo "清理build/暫存工作目錄以騰出空間..."
-          rm -rf "${BUILD_DIR}build"
-          echo "打包接力狀態(工具鏈+已裝套件+進度標記)到大容量分區..."
+          # 打包前清掉build/(各套件編譯暫存工作目錄，很肥)以騰出空間；但保留glibc/icu
+          # 的build目錄——它們在後面套件的安裝階段還會被引用(glibc:ES取charmaps/localedef;
+          # icu:--with-cross-build)，剝掉會讓還原後的組裝失敗。保留這兩個後，把它們也
+          # 一併打包進checkpoint，下一輪還原就直接有、不用重編。
+          echo "清理build/暫存工作目錄(保留glibc/icu)以騰出空間..."
+          if [ -d "${BUILD_DIR}build" ]; then
+            find "${BUILD_DIR}build" -mindepth 1 -maxdepth 1 -type d \
+              ! -name 'glibc-*' ! -name 'icu-*' -exec rm -rf {} + 2>/dev/null || true
+          fi
+          # 收集要保留的glibc/icu build目錄(可能不存在，用glob展開)
+          KEEP_BUILD=$(ls -d "${BUILD_DIR}build/glibc-"* "${BUILD_DIR}build/icu-"* 2>/dev/null)
+          echo "打包接力狀態(工具鏈+已裝套件+進度標記+glibc/icu build)到大容量分區..."
           df -h "${{ github.workspace }}"
           if ! tar -I 'zstd -T0 -3' -cf "${STATE_FILE}" \
-               "${BUILD_DIR}toolchain" "${BUILD_DIR}install_pkg" "${BUILD_DIR}.stamps"; then
+               "${BUILD_DIR}toolchain" "${BUILD_DIR}install_pkg" "${BUILD_DIR}.stamps" ${KEEP_BUILD}; then
             echo "打包失敗(多半是空間不足)，不上傳殘檔"
             rm -f "${STATE_FILE}"
             exit 1
