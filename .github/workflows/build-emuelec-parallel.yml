@@ -67,7 +67,10 @@ jobs:
       - name: Maximize build space
         uses: easimon/maximize-build-space@v10
         with:
-          root-reserve-mb: 16384
+          # NOTE(w2xg2022): 平行組還原base(11GB)在大分區，但apt裝相依到根分區。
+          # 16384時實測有runner(chunk-4)根分區踩線被apt塞爆(No space left)。調到
+          # 24576給apt更多餘裕；大分區仍有~50GB足夠base(11GB)+本組核心。
+          root-reserve-mb: 24576
           swap-size-mb: 512
           remove-dotnet: 'true'
           remove-android: 'true'
