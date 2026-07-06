@@ -121,9 +121,7 @@ jobs:
 
       - name: Build chunk cores
         id: build_chunk
-        continue-on-error: true
         run: |
-          set -o pipefail
           BUILD_DIR=$(ls -d build.*/ 2>/dev/null | head -1)
           [ -z "$BUILD_DIR" ] && { echo "找不到base建置資料夾"; exit 1; }
           mkdir -p "${{ github.workspace }}/.tmp" "${{ github.workspace }}/.home"
@@ -134,18 +132,28 @@ jobs:
           sleep 2
           LIST=$(cat "chunks/chunk-${{ matrix.chunk }}.txt")
           echo "本組(chunk ${{ matrix.chunk }})要編：" $LIST
-          # 每個核心單獨scripts/build(缺的相依會自動補；已在base裡的靠.stamps秒跳過)。
-          # 5小時40分主動停，留時間給delta打包上傳(單一job的core多半能編完，這只是保險)。
+          # NOTE(w2xg2022): 容錯迴圈——單一核心失敗只記錄+跳過，繼續編其餘的，
+          # 絕不因為一個壞核心就砍掉整組(否則8組各撞一個壞核心就全滅)。真的編不
+          # 過的核心會被寫進failed清單，後續彙整看是個別壞掉(跳過)還是系統性問題。
+          # 已在base裡的核心靠.stamps秒跳過；缺的相依scripts/build會自動補。
+          # 5小時40分主動停，留時間給delta打包上傳。
+          FAILED=""; OK=0
           MAX=20400; START=$(date +%s)
           for pkg in $LIST; do
             ELAPSED=$(( $(date +%s) - START ))
             if [ "$ELAPSED" -ge "$MAX" ]; then echo "時間快到，停止，已編的照樣打包"; break; fi
             echo "=== build $pkg ($ELAPSED s) ==="
-            PROJECT=$PROJECT DEVICE=$DEVICE SUBDEVICE=${{ needs.prepare.outputs.model }} \
-              ARCH=$ARCH DISTRO=$DISTRO TMPDIR="$TMPDIR" HOME="$HOME" \
-              scripts/build "$pkg" || { echo "!!! build $pkg 失敗"; exit 1; }
+            if PROJECT=$PROJECT DEVICE=$DEVICE SUBDEVICE=${{ needs.prepare.outputs.model }} \
+                 ARCH=$ARCH DISTRO=$DISTRO TMPDIR="$TMPDIR" HOME="$HOME" \
+                 scripts/build "$pkg"; then
+              OK=$((OK+1))
+            else
+              echo "!!! build $pkg 失敗(跳過，繼續下一個)"
+              FAILED="$FAILED $pkg"
+            fi
           done
-          echo "本組核心編譯完成"
+          echo "本組完成：成功${OK}個，失敗:${FAILED:-無}"
+          echo "$FAILED" | tr ' ' '\n' | sed '/^$/d' > "${{ github.workspace }}/failed-${{ matrix.chunk }}.txt"
 
       - name: Package & upload delta
         if: always()
@@ -183,12 +191,9 @@ jobs:
             echo "上傳 $(basename "$p")"
             gh release upload "${RELEASE_TAG}" "$p" --repo ${{ github.repository }} --clobber
           done
-
-      - name: Fail if chunk build did not finish
-        if: steps.build_chunk.outcome != 'success'
-        run: |
-          echo "本組核心未全部編完(逾時或失敗)，delta已存，可重跑本組。"
-          exit 1
+          # 一併上傳本組編不過的核心清單，供彙整判斷是個別壞掉還是系統性問題
+          FL="${{ github.workspace }}/failed-${{ matrix.chunk }}.txt"
+          [ -f "$FL" ] && gh release upload "${RELEASE_TAG}" "$FL" --repo ${{ github.repository }} --clobber || true
 
   merge:
     needs: [prepare, build-chunk]
