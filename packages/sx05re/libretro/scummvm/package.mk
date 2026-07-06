@@ -23,26 +23,20 @@ PKG_VERSION="686cdd13719b92554fa46b264c512ca7deec7a96"
 PKG_ARCH="any"
 PKG_LICENSE="GPLv2"
 PKG_SITE="https://github.com/libretro/scummvm"
-PKG_URL="${PKG_SITE}.git"
+# NOTE(w2xg2022): scummvm是重量级核心(云端CI单核编译约33分)。改用w2xg2022/EmuELEC
+# 的prebuilt-cores预编译整包(install_pkg最终布局，含.so/.info/scummvm.zip，本机完整
+# 建置验证)，主建置只下载解压、不重编。工具链ABI有变需重编时到prebuilt-cores更新。
+PKG_URL=""
 PKG_DEPENDS_TARGET="toolchain"
 PKG_SECTION="libretro"
 PKG_SHORTDESC="ScummVM with libretro backend."
 PKG_LONGDESC="ScummVM is a program which allows you to run certain classic graphical point-and-click adventure games, provided you already have their data files."
 PKG_TOOLCHAIN="manual"
-PKG_BUILD_FLAGS="-lto"
-
-post_unpack() {
-  sed -i "s|DEFINES  += -Wno-multichar|#DEFINES  += -Wno-multichar|" ${PKG_BUILD}/Makefile.common
-}
-
-make_target() {
-  cd "${PKG_BUILD}/backends/platform/libretro"
-  make all platform=rpi4_64
-}
 
 makeinstall_target() {
-  mkdir -p ${INSTALL}/usr/lib/libretro
-  cp "${PKG_BUILD}/backends/platform/libretro/scummvm_libretro."{so,info} ${INSTALL}/usr/lib/libretro/
-  mkdir -p ${INSTALL}/usr/config/emuelec/configs/scummvm
-  cp ${PKG_BUILD}/backends/platform/libretro/scummvm.zip ${INSTALL}/usr/config/emuelec/configs/scummvm
+  mkdir -p "${INSTALL}"
+  curl -sL --retry 3 --fail \
+    https://github.com/w2xg2022/EmuELEC/releases/download/prebuilt-cores/scummvm_prebuilt.tar.gz \
+    | tar -xz -C "${INSTALL}"
+  [ -f "${INSTALL}/usr/lib/libretro/scummvm_libretro.so" ] || die "scummvm 预编译包解压后找不到 scummvm_libretro.so"
 }
