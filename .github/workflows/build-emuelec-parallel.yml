@@ -40,15 +40,14 @@ jobs:
         run: echo "model=${{ github.event.inputs.model || 'X98mini' }}" >> "$GITHUB_OUTPUT"
       - id: set
         run: |
+          # NOTE(w2xg2022): 改用 .github/chunk-lists/ 里预先算好的「时间平衡」固定分组
+          # (根据实测每核心耗时贪婪装箱: libretro 4组chunk0-3 + emulator 4组chunk4-7，
+          # 4大monster mame/scummvm/scummvmsa/same_cdi已固化预编译不占时间，平衡后
+          # 每组约18-19分)。不再用round-robin，因为round-robin只按数量、不按实测时间，
+          # 会让重核心扎堆。要调整分组直接改 .github/chunk-lists/ 里的档案。
           mkdir -p chunks
-          grep -rh '^PKG_NAME=' packages/sx05re/libretro/*/package.mk | sed 's/PKG_NAME=//;s/"//g' | sort -u > lr.txt
-          grep -rh '^PKG_NAME=' packages/sx05re/emulators/*/package.mk | sed 's/PKG_NAME=//;s/"//g' | sort -u > emu.txt
-          echo "libretro=$(wc -l < lr.txt) emulators=$(wc -l < emu.txt)"
-          # round-robin 分組(讓重量級核心均勻散開，避免某組全是重的而爆6小時)：
-          # libretro 158 → 6組(chunk 0..5)，emulators 41 → 2組(chunk 6..7)
-          awk 'NR>0{print > ("chunks/chunk-" ((NR-1)%6) ".txt")}' lr.txt
-          awk 'NR>0{print > ("chunks/chunk-" (6+((NR-1)%2)) ".txt")}' emu.txt
-          for i in 0 1 2 3 4 5 6 7; do echo "chunk-$i: $(wc -l < chunks/chunk-$i.txt) 個"; done
+          cp .github/chunk-lists/chunk-*.txt chunks/
+          for i in 0 1 2 3 4 5 6 7; do echo "chunk-$i: $(grep -vc '^$' chunks/chunk-$i.txt) 個"; done
           echo 'matrix=[0,1,2,3,4,5,6,7]' >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:

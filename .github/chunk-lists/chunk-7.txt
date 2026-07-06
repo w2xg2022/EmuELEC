@@ -1,0 +1,14 @@
+PPSSPPSDL
+advancemame
+amiberry
+atari800sa
+bigpemu
+box64
+dosbox-sdl2
+droidports
+flycast-dojo
+hatarisa
+openbor
+picodrivesa
+stellasa
+yabasanshiroSA_1_5

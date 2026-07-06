@@ -1,0 +1,9 @@
+box86
+dosbox-staging
+duckstation
+eka2l1
+memu
+oricutron
+ti99sim
+x16
+yabasanshiroSA_1_11

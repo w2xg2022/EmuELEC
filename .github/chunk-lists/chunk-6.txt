@@ -1,0 +1,10 @@
+biginstinct
+dosbox-x
+ecwolf
+fbneoSA
+flycastsa
+mesen2
+mupen64plussa
+scummvmsa
+vector06sdl
+xroar
