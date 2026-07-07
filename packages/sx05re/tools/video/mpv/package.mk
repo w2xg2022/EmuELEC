@@ -14,7 +14,8 @@ PKG_TOOLCHAIN="manual"
 
 pre_configure_target() {
 	WAFRELEASE="waf-2.0.20"
-	WAFURL="https://waf.io/${WAFRELEASE}"
+	# NOTE(w2xg2022): waf.io常态连不上(No data received，重试20次放弃)，改用repo内镜像的waf。
+	WAFURL="https://raw.githubusercontent.com/w2xg2022/EmuELEC/main/packages/sx05re/tools/video/mpv/waf"
 	
 if [ ! -e ${SOURCES}/${PKG_NAME}/waf ]; then
 	wget "${WAFURL}" -O "${SOURCES}/${PKG_NAME}/waf" || echo "Could not download waf $?"
