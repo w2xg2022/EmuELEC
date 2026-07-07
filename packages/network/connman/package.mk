@@ -6,7 +6,9 @@ PKG_NAME="connman"
 PKG_VERSION="1.42"
 PKG_LICENSE="GPL"
 PKG_SITE="http://www.connman.net"
-PKG_URL="https://git.kernel.org/pub/scm/network/connman/connman.git/snapshot/connman-${PKG_VERSION}.tar.gz"
+# NOTE(w2xg2022): git.kernel.org不保留旧snapshot(404，跟kernel-firmware同病)，
+# 改用VM本地已缓存验证的源码(727K)直接镜像进repo。
+PKG_URL="https://raw.githubusercontent.com/w2xg2022/EmuELEC/main/packages/network/connman/connman-${PKG_VERSION}.tar.gz"
 PKG_DEPENDS_TARGET="toolchain glib readline dbus iptables"
 PKG_LONGDESC="A modular network connection manager."
 PKG_TOOLCHAIN="autotools"
