@@ -68,11 +68,11 @@ jobs:
   build:
     needs: prepare
     if: needs.prepare.outputs.needed == 'yes'
-    # NOTE(w2xg2022): 改用ubuntu-24.04(glibc 2.39)而非22.04(glibc 2.35)——VM base
-    # checkpoint的host工具是在VM(Ubuntu 24.04/glibc 2.39)上编的，需要GLIBC_2.38+，
-    # 22.04的glibc太旧会报「sed: version GLIBC_2.38 not found」。runner glibc要>=编
-    # base的host glibc。
-    runs-on: ubuntu-24.04
+    # NOTE(w2xg2022): 用ubuntu-22.04——这是实测能一路建完base到515的已知环境。曾为
+    # VM-base seed短暂改24.04(VM host工具需glibc2.39)，但VM-base搬云端不可携(host工具
+    # 绑死VM的glibc+CPU)已放弃；且24.04的系统autotools较新会让libtool的autoreconf挂
+    # (cannot open libltdl/ltdl.mk)。故回22.04。
+    runs-on: ubuntu-22.04
     # NOTE(w2xg2022): GitHub代管runner有硬性6小時(360分鐘)執行上限，timeout-minutes
     # 設更高也沒用，runner基礎設施會強制中止。實測跑到350分鐘進度497/639且過程中
     # 完全沒有錯誤(純粹被逾時砍掉)，代表之前修的所有上游來源/編譯問題都真的解決了，
