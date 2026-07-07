@@ -311,7 +311,7 @@ jobs:
           ls -lh "${{ github.workspace }}"/state.tar.zst.part*
           RELEASE_TAG="build-state-${{ matrix.model }}"
           gh release view "${RELEASE_TAG}" --repo ${{ github.repository }} >/dev/null 2>&1 || \
-            gh release create "${RELEASE_TAG}" --repo ${{ github.repository }} \
+            gh release create "${RELEASE_TAG}" --repo ${{ github.repository }} --prerelease \
               --title "建置接力狀態(自動，${{ matrix.model }})" \
               --notes "自動保存的建置中間狀態(切塊)，供下一輪雲編譯接續使用，不是可安裝的韌體。"
           for a in $(gh release view "${RELEASE_TAG}" --repo ${{ github.repository }} --json assets -q '.assets[].name' 2>/dev/null); do
@@ -359,6 +359,7 @@ jobs:
           tag_name: ${{ matrix.model }}-${{ github.run_id }}
           name: "EmuELEC ${{ matrix.model }} (${{ github.run_id }})"
           files: out/*
+          make_latest: "true"
           body: |
             自动云编译：${{ env.PROJECT }}/${{ env.DEVICE }} SUBDEVICE=${{ matrix.model }}
             触发方式：${{ github.event_name }}
@@ -373,7 +374,7 @@ jobs:
           if gh release view built-commit --repo ${{ github.repository }} >/dev/null 2>&1; then
             gh release edit built-commit --repo ${{ github.repository }} --notes "${{ github.sha }}"
           else
-            gh release create built-commit --repo ${{ github.repository }} \
+            gh release create built-commit --repo ${{ github.repository }} --prerelease \
               --title "上次成功建置的commit(月度cron的gate用)" --notes "${{ github.sha }}"
           fi
           echo "已記錄本次成功建置的commit：${{ github.sha }}"
