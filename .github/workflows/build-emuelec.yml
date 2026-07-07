@@ -144,19 +144,17 @@ jobs:
               # build目錄)。之後的存檔會保留這兩個build目錄(見save步驟)，所以只有第一次
               # 用舊checkpoint時會重編。
               BD=$(ls -d build.*/ 2>/dev/null | head -1)
-              for p in glibc icu; do
-                if ! ls -d "${BD}build/${p}-"* >/dev/null 2>&1; then
-                  echo "checkpoint缺${p}的build目錄，清stamp強制重編一次(重新產生build目錄)"
+              # NOTE(w2xg2022): 这些套件的build目录会在「安装阶段」被别的套件用
+              # get_build_dir引用(glibc:ES取charmaps; icu:自己--with-cross-build;
+              # capsimg:hatarisa取LibIPF; 等)。checkpoint为省空间剥掉了build/，若某个
+              # 这类套件在checkpoint里(有stamp)但缺build目录，清其stamp强制重编一次
+              # 重新产生build目录。build目录还在的(如save保留的glibc/icu)不动。发现
+              # 一个补一个进这个清单。
+              for p in glibc icu libpcap capsimg gl4es enet zmusic math_neon cyclone68000 sdlgamecontrollerdb libdrm libepoxy libevdev; do
+                if [ -d "${BD}.stamps/${p}" ] && ! ls -d "${BD}build/${p}-"* >/dev/null 2>&1; then
+                  echo "checkpoint有${p} stamp但缺build目錄，清stamp強制重編一次"
                   rm -rf "${BD}.stamps/${p}"
                 fi
-              done
-              # NOTE(w2xg2022): 平行編譯的delta只打包了install_pkg+.stamps，沒打包
-              # toolchain/sysroot的變動。所以在平行chunk裡當「核心依賴」編出來的函式庫
-              # (libpcap等)，它裝進sysroot的標頭/庫沒進base，後面編譯依賴它的套件
-              # (desmume需pcap.h)時就找不到。這類lib清stamp強制重編一次，重編會重新
-              # 把標頭裝回sysroot。發現一個補一個。
-              for p in libpcap; do
-                if [ -d "${BD}.stamps/${p}" ]; then echo "強制重編sysroot依賴lib: ${p}"; rm -rf "${BD}.stamps/${p}"; fi
               done
             else
               echo "接力狀態拼回後損壞，丟棄，從零開始建置"
