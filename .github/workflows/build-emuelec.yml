@@ -156,7 +156,7 @@ jobs:
               # (desmume需pcap.h)時就找不到。這類lib清stamp強制重編一次，重編會重新
               # 把標頭裝回sysroot。發現一個補一個。
               for p in libpcap; do
-                [ -d "${BD}.stamps/${p}" ] && { echo "強制重編sysroot依賴lib: ${p}"; rm -rf "${BD}.stamps/${p}"; }
+                if [ -d "${BD}.stamps/${p}" ]; then echo "強制重編sysroot依賴lib: ${p}"; rm -rf "${BD}.stamps/${p}"; fi
               done
             else
               echo "接力狀態拼回後損壞，丟棄，從零開始建置"
