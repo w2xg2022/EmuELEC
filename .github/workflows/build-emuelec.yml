@@ -68,7 +68,11 @@ jobs:
   build:
     needs: prepare
     if: needs.prepare.outputs.needed == 'yes'
-    runs-on: ubuntu-22.04
+    # NOTE(w2xg2022): 改用ubuntu-24.04(glibc 2.39)而非22.04(glibc 2.35)——VM base
+    # checkpoint的host工具是在VM(Ubuntu 24.04/glibc 2.39)上编的，需要GLIBC_2.38+，
+    # 22.04的glibc太旧会报「sed: version GLIBC_2.38 not found」。runner glibc要>=编
+    # base的host glibc。
+    runs-on: ubuntu-24.04
     # NOTE(w2xg2022): GitHub代管runner有硬性6小時(360分鐘)執行上限，timeout-minutes
     # 設更高也沒用，runner基礎設施會強制中止。實測跑到350分鐘進度497/639且過程中
     # 完全沒有錯誤(純粹被逾時砍掉)，代表之前修的所有上游來源/編譯問題都真的解決了，
@@ -256,6 +260,10 @@ jobs:
 
       - name: Save build checkpoint to Release (always)
         if: always()
+        # NOTE(w2xg2022): 存checkpoint失敗(空間不足等)不該擋掉后面的韌體上傳。
+        # continue-on-error讓Save失敗时job仍算成功、繼續跑Collect/Upload firmware，
+        # 确保build成功产出的.img一定会被上传。
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
