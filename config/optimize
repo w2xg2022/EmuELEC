@@ -9,7 +9,11 @@ TARGET_LIBDIR="$SYSROOT_PREFIX/lib $SYSROOT_PREFIX/usr/lib"
 TARGET_INCDIR="$SYSROOT_PREFIX/include $SYSROOT_PREFIX/usr/include"
 
 HOST_CPPFLAGS=""
-HOST_CFLAGS="-march=native -O2 -Wall -pipe -I$TOOLCHAIN/include"
+# NOTE(w2xg2022): host工具改用通用x86-64(-mtune=generic不绑ISA)而非-march=native。
+# native会绑死编译它的那台机器的CPU指令集，导致checkpoint/host工具搬到CPU不同的
+# runner(GitHub runner CPU异质)或VM时报Illegal instruction崩溃，使跨轮还原(resume)
+# 和平行(靠还原)都不可靠。通用march让host工具可跨任何x86-64机器运行。
+HOST_CFLAGS="-mtune=generic -O2 -Wall -pipe -I$TOOLCHAIN/include"
 HOST_CXXFLAGS="$HOST_CFLAGS"
 HOST_LDFLAGS="-Wl,-rpath,$TOOLCHAIN/lib -L$TOOLCHAIN/lib"
 HOST_INCDIR="$TOOLCHAIN/include /usr/include"
