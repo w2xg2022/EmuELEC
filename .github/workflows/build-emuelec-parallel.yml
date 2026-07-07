@@ -168,10 +168,14 @@ jobs:
           MARKER="${{ github.workspace }}/marker"
           [ -f "$MARKER" ] || { echo "無marker(建置沒開始)，跳過delta"; exit 0; }
           DELTA="${{ github.workspace }}/delta-${{ matrix.chunk }}.tar.zst"
-          # 只打包marker之後改動的檔(=本組真正新編的核心的install_pkg + .stamps)
-          echo "打包delta(marker之後改動的install_pkg/.stamps)..."
+          # NOTE(w2xg2022): delta要一併打包toolchain(內含sysroot)在marker之後的改動！
+          # 之前只打包install_pkg+.stamps，漏掉了「本組編核心時當依賴順手編出的函式庫
+          # (libpcap/fluidsynth等)裝進sysroot的標頭/庫」。結果base有那些lib的stamp卻
+          # 缺sysroot內容，後面組裝時要重編依賴它們的straggler就找不到標頭而失敗。
+          # --newer-mtime只抓marker後改動的檔，sysroot新增量很小，delta不會變太大。
+          echo "打包delta(marker之後改動的install_pkg/.stamps/toolchain-sysroot)..."
           if ! tar -I 'zstd -T0 -3' --newer-mtime="@$(stat -c %Y "$MARKER")" \
-               -cf "$DELTA" -C "$BUILD_DIR" install_pkg .stamps; then
+               -cf "$DELTA" -C "$BUILD_DIR" install_pkg .stamps toolchain; then
             echo "打包delta失敗"; rm -f "$DELTA"; exit 1
           fi
           ls -lh "$DELTA"
