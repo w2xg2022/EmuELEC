@@ -150,7 +150,7 @@ jobs:
               # 这类套件在checkpoint里(有stamp)但缺build目录，清其stamp强制重编一次
               # 重新产生build目录。build目录还在的(如save保留的glibc/icu)不动。发现
               # 一个补一个进这个清单。
-              for p in glibc icu libpcap capsimg gl4es enet zmusic math_neon cyclone68000 sdlgamecontrollerdb libdrm libepoxy libevdev go rust cargo-snapshot rustc-snapshot rust-std-snapshot opengl-meson; do
+              for p in glibc icu libpcap capsimg gl4es enet zmusic math_neon cyclone68000 sdlgamecontrollerdb libdrm libepoxy libevdev go rust cargo-snapshot rustc-snapshot rust-std-snapshot opengl-meson linux; do
                 if [ -d "${BD}.stamps/${p}" ] && ! ls -d "${BD}build/${p}-"* >/dev/null 2>&1; then
                   echo "checkpoint有${p} stamp但缺build目錄，清stamp強制重編一次"
                   rm -rf "${BD}.stamps/${p}"
@@ -230,7 +230,7 @@ jobs:
                 # NOTE(w2xg2022): glibc/icu的build目錄在後面套件的安裝階段還會被引用
                 # (glibc: ES取charmaps/localedef; icu: --with-cross-build)，不能清，
                 # 否則ES/icu-dependent套件安裝時找不到build目錄而失敗。
-                case "$d" in glibc-*|icu-*) continue;; esac
+                case "$d" in glibc-*|icu-*|linux-*) continue;; esac
                 if [ -d "${BUILD_DIR}build/$d" ]; then
                   rm -rf "${BUILD_DIR}build/$d"
                   CLEANED=$((CLEANED+1))
@@ -285,10 +285,10 @@ jobs:
           echo "清理build/暫存工作目錄(保留glibc/icu)以騰出空間..."
           if [ -d "${BUILD_DIR}build" ]; then
             find "${BUILD_DIR}build" -mindepth 1 -maxdepth 1 -type d \
-              ! -name 'glibc-*' ! -name 'icu-*' -exec rm -rf {} + 2>/dev/null || true
+              ! -name 'glibc-*' ! -name 'icu-*' ! -name 'linux-*' -exec rm -rf {} + 2>/dev/null || true
           fi
           # 收集要保留的glibc/icu build目錄(可能不存在，用glob展開)
-          KEEP_BUILD=$(ls -d "${BUILD_DIR}build/glibc-"* "${BUILD_DIR}build/icu-"* 2>/dev/null)
+          KEEP_BUILD=$(ls -d "${BUILD_DIR}build/glibc-"* "${BUILD_DIR}build/icu-"* "${BUILD_DIR}build/linux-"* 2>/dev/null)
           echo "打包接力狀態(工具鏈+已裝套件+進度標記+glibc/icu build)到大容量分區..."
           df -h "${{ github.workspace }}"
           if ! tar -I 'zstd -T0 -3' -cf "${STATE_FILE}" \
