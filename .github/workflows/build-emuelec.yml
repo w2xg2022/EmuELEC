@@ -150,7 +150,7 @@ jobs:
               # 这类套件在checkpoint里(有stamp)但缺build目录，清其stamp强制重编一次
               # 重新产生build目录。build目录还在的(如save保留的glibc/icu)不动。发现
               # 一个补一个进这个清单。
-              for p in glibc icu libpcap capsimg gl4es enet zmusic math_neon cyclone68000 sdlgamecontrollerdb libdrm libepoxy libevdev; do
+              for p in glibc icu libpcap capsimg gl4es enet zmusic math_neon cyclone68000 sdlgamecontrollerdb libdrm libepoxy libevdev go rust cargo-snapshot rustc-snapshot rust-std-snapshot; do
                 if [ -d "${BD}.stamps/${p}" ] && ! ls -d "${BD}build/${p}-"* >/dev/null 2>&1; then
                   echo "checkpoint有${p} stamp但缺build目錄，清stamp強制重編一次"
                   rm -rf "${BD}.stamps/${p}"
