@@ -186,7 +186,7 @@ jobs:
           ls -lh "${{ github.workspace }}"/delta-${{ matrix.chunk }}.tar.zst.part*
           RELEASE_TAG="build-cores-delta-${{ needs.prepare.outputs.model }}"
           gh release view "${RELEASE_TAG}" --repo ${{ github.repository }} >/dev/null 2>&1 || \
-            gh release create "${RELEASE_TAG}" --repo ${{ github.repository }} \
+            gh release create "${RELEASE_TAG}" --repo ${{ github.repository }} --prerelease \
               --title "平行核心delta(自動，${{ needs.prepare.outputs.model }})" \
               --notes "各平行組編出的核心增量(切塊)，供merge疊加回base，非可安裝韌體。"
           # 先刪掉本chunk舊的delta分塊，避免上輪殘留污染
