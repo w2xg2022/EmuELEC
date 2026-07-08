@@ -57,6 +57,7 @@ PROJECT=Amlogic-ce DEVICE=Amlogic-no SUBDEVICE=X98mini IMAGE_SUFFIX=X98mini ARCH
 
 | 仓库 | 阵营 / 用途 |
 |---|---|
+| [w2xg2022/rocknix](https://github.com/w2xg2022/rocknix) | **第一志愿**：原厂闭源 BSP + Vulkan（libmali）。掌机类 SoC（如 RK3566）首选，PSP 天花板最高 |
 | [w2xg2022/armbian](https://github.com/w2xg2022/armbian) | 社区开源阵营：Armbian 固件打包（fork 自 ophub/amlogic-s9xxx-armbian） |
 | [w2xg2022/armbian-kernel](https://github.com/w2xg2022/armbian-kernel) | 社区开源阵营：Armbian 主线内核源码（fork 自 ophub/linux-6.18.y） |
 | [w2xg2022/es4all-1key](https://github.com/w2xg2022/es4all-1key) | 一键把 Armbian 变复古游戏机的安装脚本 |
