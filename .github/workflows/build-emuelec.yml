@@ -104,6 +104,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # NOTE(w2xg2022): linux(核心)与跟它「同批编译才安全」的驱动模块(gpu-aml/
+      # media_modules-aml/各wifi-bt驱动等，判断依据：PKG_IS_KERNEL_PKG="yes"或
+      # PKG_NEED_UNPACK="${LINUX_DEPENDS}"，即会用kernel_path/get_build_dir linux
+      # 引用核心build目录来编译外挂.ko模块)，过去靠checkpoint的手写force-rebuild
+      # 清单来管理，绕过了build系统自己的PKG_DEPENDS_TARGET依赖图，一旦清单漏列
+      # 或核心被意外重编、驱动模块没跟着重编，就会vermagic对不上(表现为卡开机)。
+      # 改成把这批包整组当一个「原子kernel bundle」：用它们的package.mk+patches
+      # 内容雜湊当版本键，雜湊不变=直接整组复用，雜湊一变=整组一起重编，绝不会
+      # 只重编其中一部分。此步骤只算雜湊，不碰任何文件。
+      - name: Compute kernel bundle hash
+        run: |
+          KERNEL_PKGS="linux gpu-aml media_modules-aml aic8800-sdio ap6xxx-aml mt76 mt7668-wifi-bt RTL8189FS RTL8723DS-aml RTL8851BU RTL8852BE-aml RTL8852BS-aml RTW88 w1-aml wifi_dummy-aml"
+          HASH_INPUT=""
+          for pkg in $KERNEL_PKGS; do
+            for f in $(grep -rl "^PKG_NAME=\"${pkg}\"\$" packages/ projects/ 2>/dev/null); do
+              d=$(dirname "$f")
+              HASH_INPUT="$HASH_INPUT $(find "$d" -type f | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1)"
+            done
+          done
+          KERNEL_HASH=$(echo "$HASH_INPUT" | sha256sum | cut -c1-16)
+          echo "KERNEL_HASH=$KERNEL_HASH" >> "$GITHUB_ENV"
+          echo "本次kernel lane内容雜湊：$KERNEL_HASH（由linux+14个耦合驱动包的package.mk+patches内容决定）"
+
       # NOTE(w2xg2022): 之前用actions/cache存sources/ccache，但GitHub的6小時硬上限
       # 是暴力砍斷整個job，來不及跑cache的儲存(post)步驟，導致快取永遠存不進去，
       # 每次都從零開始編到差不多同一個進度又被砍，等於白做。改用GitHub Release
@@ -150,7 +173,10 @@ jobs:
               # 这类套件在checkpoint里(有stamp)但缺build目录，清其stamp强制重编一次
               # 重新产生build目录。build目录还在的(如save保留的glibc/icu)不动。发现
               # 一个补一个进这个清单。
-              for p in glibc icu libpcap capsimg gl4es enet zmusic math_neon cyclone68000 sdlgamecontrollerdb libdrm libepoxy libevdev go rust cargo-snapshot rustc-snapshot rust-std-snapshot opengl-meson linux; do
+              # NOTE(w2xg2022): linux已移出這份清單——kernel(及其耦合驅動模組)現在由
+              # 下面獨立的「Restore kernel bundle」步驟原子化接管，不再靠這裡的手寫
+              # 清單個別補救，避免重蹈「核心被強制重編、驅動模組沒跟著重編」的覆轍。
+              for p in glibc icu libpcap capsimg gl4es enet zmusic math_neon cyclone68000 sdlgamecontrollerdb libdrm libepoxy libevdev go rust cargo-snapshot rustc-snapshot rust-std-snapshot opengl-meson; do
                 if [ -d "${BD}.stamps/${p}" ] && ! ls -d "${BD}build/${p}-"* >/dev/null 2>&1; then
                   echo "checkpoint有${p} stamp但缺build目錄，清stamp強制重編一次"
                   rm -rf "${BD}.stamps/${p}"
@@ -164,6 +190,35 @@ jobs:
           else
             echo "沒有找到之前的接力狀態，從零開始建置"
             rm -rf "${STATE_DIR}"
+          fi
+
+      # NOTE(w2xg2022): 在通用checkpoint還原「之後」執行，確保kernel bundle的
+      # .stamps/install_pkg一定是最終覆蓋、最終生效的版本——就算通用checkpoint
+      # 裡殘留舊的、不成套的kernel相關內容，這步驟也會用「整組雜湊比對過」的
+      # 原子bundle蓋過去，永遠不會出現部分新、部分舊的錯位組合。
+      - name: Restore kernel bundle from Release (atomic kernel+driver set)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RELEASE_TAG="kernel-state-${{ matrix.model }}-${KERNEL_HASH}"
+          BD=$(ls -d build.*/ 2>/dev/null | head -1)
+          if [ -z "$BD" ]; then
+            echo "尚無build目錄(全新建置)，kernel bundle將在本輪build完後產生並快取"
+            exit 0
+          fi
+          KSTATE="${{ github.workspace }}/kstate.tar.zst"
+          if gh release download "${RELEASE_TAG}" -p 'kstate.tar.zst' -O "${KSTATE}" --repo ${{ github.repository }} 2>/dev/null; then
+            echo "找到雜湊相符的kernel bundle(${KERNEL_HASH})，還原中(整組原子覆蓋，確保核心與驅動模組永遠同批)..."
+            if zstd -t "${KSTATE}" 2>/dev/null; then
+              tar -I zstd -xf "${KSTATE}" -C "${BD}"
+              rm -f "${KSTATE}"
+              echo "kernel bundle還原完成，本輪跳過重編linux及其耦合驅動包"
+            else
+              echo "kernel bundle損壞，丟棄，本輪將重編整組kernel lane"
+              rm -f "${KSTATE}"
+            fi
+          else
+            echo "沒有雜湊${KERNEL_HASH}對應的kernel bundle(首次建置或kernel/驅動有改動)，本輪將重編整組kernel lane"
           fi
 
       - name: Install build dependencies
@@ -230,7 +285,9 @@ jobs:
                 # NOTE(w2xg2022): glibc/icu的build目錄在後面套件的安裝階段還會被引用
                 # (glibc: ES取charmaps/localedef; icu: --with-cross-build)，不能清，
                 # 否則ES/icu-dependent套件安裝時找不到build目錄而失敗。
-                case "$d" in glibc-*|icu-*|linux-*) continue;; esac
+                # NOTE(w2xg2022): linux不再需要在这里特殊保留——kernel bundle只快取
+                # .stamps+install_pkg，不需要build/linux-*，可以像一般套件一样清理。
+                case "$d" in glibc-*|icu-*) continue;; esac
                 if [ -d "${BUILD_DIR}build/$d" ]; then
                   rm -rf "${BUILD_DIR}build/$d"
                   CLEANED=$((CLEANED+1))
@@ -255,6 +312,46 @@ jobs:
           exit $BUILD_EXIT
         continue-on-error: true
         id: build_step
+
+      # NOTE(w2xg2022): 只有linux+14個耦合驅動包「全部」都有安裝完成標記(整組真正
+      # 编完，不是编到一半)才快取，且用內容雜湊當Release tag，同雜湊已存在就不重複
+      # 上傳。這樣kernel bundle永遠是「整組一起成功」的原子快照，之後只要源碼沒動
+      # 這批包，任何一輪建置都能直接複用、完全跳過重編。
+      - name: Save kernel bundle to Release (atomic kernel+driver set)
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          KERNEL_PKGS="linux gpu-aml media_modules-aml aic8800-sdio ap6xxx-aml mt76 mt7668-wifi-bt RTL8189FS RTL8723DS-aml RTL8851BU RTL8852BE-aml RTL8852BS-aml RTW88 w1-aml wifi_dummy-aml"
+          BD=$(ls -d build.*/ 2>/dev/null | head -1)
+          if [ -z "$BD" ]; then echo "無build目錄，跳過"; exit 0; fi
+          MISSING=0
+          for p in $KERNEL_PKGS; do
+            [ -d "${BD}.stamps/${p}" ] || { echo "缺 ${p} 的安裝完成標記，kernel lane本輪未整組編完，不快取"; MISSING=1; }
+          done
+          if [ "$MISSING" = "1" ]; then exit 0; fi
+          RELEASE_TAG="kernel-state-${{ matrix.model }}-${KERNEL_HASH}"
+          if gh release view "${RELEASE_TAG}" --repo ${{ github.repository }} >/dev/null 2>&1; then
+            echo "雜湊${KERNEL_HASH}的kernel bundle已存在，無需重複上傳"
+            exit 0
+          fi
+          KSTATE="${{ github.workspace }}/kstate.tar.zst"
+          STAMP_PATHS=""
+          INSTALL_PATHS=""
+          for p in $KERNEL_PKGS; do
+            STAMP_PATHS="$STAMP_PATHS .stamps/${p}"
+            for d in "${BD}install_pkg/${p}-"*; do [ -d "$d" ] && INSTALL_PATHS="$INSTALL_PATHS install_pkg/$(basename "$d")"; done
+          done
+          tar -I 'zstd -T0 -3' -cf "${KSTATE}" -C "${BD}" ${STAMP_PATHS} ${INSTALL_PATHS}
+          zstd -t "${KSTATE}" || { echo "kernel bundle自檢損壞，不上傳"; rm -f "${KSTATE}"; exit 1; }
+          ls -lh "${KSTATE}"
+          gh release create "${RELEASE_TAG}" --repo ${{ github.repository }} --prerelease \
+            --title "Kernel Bundle(自動，${{ matrix.model }}，hash ${KERNEL_HASH})" \
+            --notes "linux內核+耦合驅動模組(gpu-aml/media_modules-aml/wifi-bt等)的原子化快取，按package.mk+patches內容雜湊(${KERNEL_HASH})鎖版本。雜湊不變代表這些包源碼未變，可直接複用，永不單獨重編其中一部分。" \
+            "${KSTATE}"
+          rm -f "${KSTATE}"
+          echo "kernel bundle已快取(hash=${KERNEL_HASH})"
 
       - name: Save build checkpoint to Release (always)
         if: always()
@@ -283,12 +380,14 @@ jobs:
           # icu:--with-cross-build)，剝掉會讓還原後的組裝失敗。保留這兩個後，把它們也
           # 一併打包進checkpoint，下一輪還原就直接有、不用重編。
           echo "清理build/暫存工作目錄(保留glibc/icu)以騰出空間..."
+          # NOTE(w2xg2022): linux不再特殊保留——kernel bundle(獨立的Save步驟)只快取
+          # .stamps+install_pkg，不需要build/linux-*，可以跟一般套件一樣清掉騰空間。
           if [ -d "${BUILD_DIR}build" ]; then
             find "${BUILD_DIR}build" -mindepth 1 -maxdepth 1 -type d \
-              ! -name 'glibc-*' ! -name 'icu-*' ! -name 'linux-*' -exec rm -rf {} + 2>/dev/null || true
+              ! -name 'glibc-*' ! -name 'icu-*' -exec rm -rf {} + 2>/dev/null || true
           fi
           # 收集要保留的glibc/icu build目錄(可能不存在，用glob展開)
-          KEEP_BUILD=$(ls -d "${BUILD_DIR}build/glibc-"* "${BUILD_DIR}build/icu-"* "${BUILD_DIR}build/linux-"* 2>/dev/null)
+          KEEP_BUILD=$(ls -d "${BUILD_DIR}build/glibc-"* "${BUILD_DIR}build/icu-"* 2>/dev/null)
           echo "打包接力狀態(工具鏈+已裝套件+進度標記+glibc/icu build)到大容量分區..."
           df -h "${{ github.workspace }}"
           if ! tar -I 'zstd -T0 -3' -cf "${STATE_FILE}" \
