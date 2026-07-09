@@ -1,14 +1,15 @@
-<svg viewBox="0 0 240 210" width="240" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,-apple-system,'Noto Sans SC',sans-serif">
-  <rect x="0" y="0" width="240" height="210" rx="10" fill="#f4f5f7"/>
-  <text x="120" y="26" text-anchor="middle" font-size="13" font-weight="700" fill="#1c1e21">PSP：符号固定在几何位置</text>
-  <g transform="translate(120,120)">
-    <circle cx="0" cy="-48" r="23" fill="#3b82f6"/><text x="0" y="-41" text-anchor="middle" font-size="17" font-weight="700" fill="#fff">△</text>
-    <text x="0" y="-78" text-anchor="middle" font-size="10" fill="#6b7076">北</text>
-    <circle cx="0" cy="48" r="23" fill="#22a06b"/><text x="0" y="55" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">✕</text>
-    <text x="0" y="84" text-anchor="middle" font-size="10" fill="#6b7076">南</text>
-    <circle cx="-50" cy="0" r="23" fill="#e0a80d"/><text x="-50" y="7" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">□</text>
-    <text x="-84" y="4" text-anchor="middle" font-size="10" fill="#6b7076">西</text>
-    <circle cx="50" cy="0" r="23" fill="#e0574a"/><text x="50" y="7" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">○</text>
-    <text x="84" y="4" text-anchor="middle" font-size="10" fill="#6b7076">东</text>
+<svg viewBox="0 0 330 320" width="330" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,-apple-system,'Noto Sans SC',sans-serif">
+  <rect x="0" y="0" width="330" height="320" rx="12" fill="#f4f5f7"/>
+  <text x="165" y="34" text-anchor="middle" font-size="17" font-weight="700" fill="#1c1e21">PSP：符号固定在几何位置</text>
+  <text x="165" y="56" text-anchor="middle" font-size="12.5" fill="#6b7076">✕-南 · ○-东 · □-西 · △-北</text>
+  <g transform="translate(165,185)">
+    <circle cx="0" cy="-58" r="30" fill="#3b82f6"/><text x="0" y="-49" text-anchor="middle" font-size="22" font-weight="700" fill="#fff">△</text>
+    <text x="0" y="-100" text-anchor="middle" font-size="12" fill="#6b7076">北</text>
+    <circle cx="0" cy="58" r="30" fill="#22a06b"/><text x="0" y="67" text-anchor="middle" font-size="20" font-weight="700" fill="#fff">✕</text>
+    <text x="0" y="106" text-anchor="middle" font-size="12" fill="#6b7076">南</text>
+    <circle cx="-62" cy="0" r="30" fill="#e0a80d"/><text x="-62" y="9" text-anchor="middle" font-size="20" font-weight="700" fill="#fff">□</text>
+    <text x="-104" y="5" text-anchor="middle" font-size="12" fill="#6b7076">西</text>
+    <circle cx="62" cy="0" r="30" fill="#e0574a"/><text x="62" y="9" text-anchor="middle" font-size="20" font-weight="700" fill="#fff">○</text>
+    <text x="104" y="5" text-anchor="middle" font-size="12" fill="#6b7076">东</text>
   </g>
 </svg>
