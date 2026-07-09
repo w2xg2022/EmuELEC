@@ -639,23 +639,21 @@ echo "menu_swap_ok_cancel_buttons = \"${inverted_ok_cancel}\"" >> ${RACONF}
 # 用BEGIN/END標記包住新增的4行，每次啟動都先移除舊標記區塊再視設定決定要不要
 # 重新加入，避免重複啟動遊戲後remap檔案內容一直疊加；標記以外的既有內容
 # (例如N64 Mupen64Plus-Next.rmp原本就有的input_playerN_analog_dpad_mode)保留不動。
-declare -A EE_GAMEBTN_CORENAME=(
-    [applewin]="applewin"
-    [fbneo]="FinalBurn Neo"
-    [mgba]="mGBA"
-    [gambatte]="Gambatte"
-    [genesis_plus_gx]="Genesis Plus GX"
-    [mame2003_plus]="MAME 2003-Plus"
-    [mupen64plus_next]="Mupen64Plus-Next"
-    [nestopia]="Nestopia"
-    [dosbox_pure]="DOSBox-pure"
-    [mednafen_pce_fast]="Beetle PCE Fast"
-    [ppsspp]="PPSSPP"
-    [pcsx_rearmed_32b]="PCSX-ReARMed 32Bit"
-    [yabasanshiroSA1_5]="YabaSanshiro"
-    [snes9x]="Snes9x"
-)
-EE_GAMEBTN_CORENAME_VAL="${EE_GAMEBTN_CORENAME[${CORE}]}"
+# NOTE(w2xg2022): ★改为自动推导，不再维护写死白名单★
+# 旧版用一张手写的 EE_GAMEBTN_CORENAME 表(核心内部名→RA corename)当白名单，
+# 只列了十几个核心，漏一个该核心就完全不生效——实测 mame2010/mame2016/mame/
+# fbalpha2012*/fbneo_neogeo/hbmame 等一大票 arcade 核心全没收录，游戏内AB/XY对调
+# 对它们通通失效。改成直接从核心自己的 .info 读 corename(RetroArch 的 per-core
+# remap 文件夹名就是这个)，任何 libretro 核心都自动生效、永不漏。
+# 前提：emuelecRunEmu.sh 传进来的是未截断的完整核心名(见该处 SS_CORE)。
+# 找不到 .info(例如 ppsspp/flycast 独立模拟器走各自 joy 脚本、不经这里)就跳过。
+EE_GAMEBTN_CORENAME_VAL=""
+for _inf in "/tmp/cores/${CORE}_libretro.info" "/usr/lib/libretro/${CORE}_libretro.info"; do
+    if [[ -f "${_inf}" ]]; then
+        EE_GAMEBTN_CORENAME_VAL=$(sed -n 's/^corename *= *"\([^"]*\)".*/\1/p' "${_inf}" | head -1)
+        break
+    fi
+done
 if [[ -n "${EE_GAMEBTN_CORENAME_VAL}" ]]; then
     # NOTE(w2xg2022): 配合es4all的ES把「遊戲內按鍵對調」拆成兩個獨立設定，膠水
     # 也拆開分別套用(以前只有InvertGameButtons、一開就AB+XY一起翻，那其實是bug：
