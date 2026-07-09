@@ -2,10 +2,11 @@
 # Copyright (C) 2019-present Shanti Gilbert (https://github.com/shantigilbert)
 
 # es4all: 源码改由统一仓库 es4all 提供（原 EmuELEC/emuelec-emulationstation）。
-# NOTE(w2xg2022): PKG_VERSION 用 es4all 远端 main 最新 commit(c9865b2，含 evdev
-# 布局侦测、AB可换位/XY维持标准显示等)，而非 es4all/dist/emuelec 里 pin 的旧值。
+# NOTE(w2xg2022): PKG_VERSION 用 es4all 远端 main 最新 commit(08fe0b6，在 evdev
+# 布局侦测基础上又拆了游戏内AB/XY互换为两颗独立开关、补齐布局侦测精灵简繁翻译、
+# 摇杆按下文案统一)，而非 es4all/dist/emuelec 里 pin 的旧值。
 PKG_NAME="emuelec-emulationstation"
-PKG_VERSION="c9865b25b2bfccdbec4933b064dc3d2bf20ac933"
+PKG_VERSION="08fe0b6bb1a70422aa60cbcb147519cade82f8cd"
 PKG_GIT_CLONE_BRANCH="main"
 PKG_REV="1"
 PKG_ARCH="any"
