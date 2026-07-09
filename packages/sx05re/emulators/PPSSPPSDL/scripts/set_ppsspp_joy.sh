@@ -74,15 +74,21 @@ declare -A KB_PPSSPP_VALUES=(
   [a1-1]="1-39"
 )
 
+# NOTE(w2xg2022): 基准为「位置对齐」——物理位置(SDL名a=南/b=东/x=西/y=北)映射到
+# 该位置的PSP符号(南=✕Cross、东=○Circle、西=□Square、北=△Triangle)，配合下面
+# GC_PPSSPP_VALUES的b0-b3(南189/东190/西191/北188)达成✕○□△几何对齐。
+# ⚠️旧版这里是全对调状态(南→Circle等)，端到端追踪根本没对齐，本次一并修正。
+# 之后由ES的InvertGameButtons/InvertXYButtons决定是否翻转(见下方)。PSP无字母标签，
+# 「位置对齐」即其唯一自然基准。
 declare -A GC_PPSSPP_BUTTONS=(
   [dpleft]="Left"
   [dpright]="Right"
   [dpup]="Up"
   [dpdown]="Down"
-  [x]="Triangle"
-  [y]="Square"
-  [a]="Circle"
-  [b]="Cross"
+  [a]="Cross"
+  [b]="Circle"
+  [x]="Square"
+  [y]="Triangle"
   [back]="Select"
   [start]="Start"
   [leftshoulder]="L"
@@ -92,6 +98,24 @@ declare -A GC_PPSSPP_BUTTONS=(
   [lefty-0]="An.Up"
   [lefty-1]="An.Down"
 )
+
+# NOTE(w2xg2022): 游戏内AB/XY对调透传——与flycast独立模拟器、RA per-core remap统一由
+# ES的InvertGameButtons(AB)/InvertXYButtons(XY)驱动，语义一致：设定=true该组「位置对齐」，
+# false则「翻转」。默认 InvertGameButtons=true(AB位置对齐:南✕东○)、InvertXYButtons=false
+# (XY翻转:西△北□)。让「手柄和蓝牙设置」那两颗开关能真正透传到PSP独立模拟器。
+EE_INVERT_AB=$(get_es_setting bool InvertGameButtons)
+[[ "${EE_INVERT_AB}" == "false" ]] || EE_INVERT_AB="true"
+EE_INVERT_XY=$(get_es_setting bool InvertXYButtons)
+[[ "${EE_INVERT_XY}" == "true" ]] || EE_INVERT_XY="false"
+
+if [[ "${EE_INVERT_AB}" == "false" ]]; then
+  GC_PPSSPP_BUTTONS[a]="Circle"
+  GC_PPSSPP_BUTTONS[b]="Cross"
+fi
+if [[ "${EE_INVERT_XY}" == "false" ]]; then
+  GC_PPSSPP_BUTTONS[x]="Triangle"
+  GC_PPSSPP_BUTTONS[y]="Square"
+fi
 
 # Cleans all the inputs for the gamepad with name ${GAMEPAD} and player ${1}
 clean_pad() {
@@ -106,6 +130,11 @@ clean_pad() {
 	grep -m 1 "Pause (no menu) =" ${CONFIG} >> ${CONFIG_TMP}
 	grep -m 1 "Rewind =" ${CONFIG} >> ${CONFIG_TMP}
 	grep -m 1 "Toggle Debugger =" ${CONFIG} >> ${CONFIG_TMP}
+	# NOTE(w2xg2022): 保留统一热键组合键行(SELECT+START退出/SELECT+R1存档/SELECT+L1读档)，
+	# 否则auto_gamepad每次重建controls.ini会把controls.ini模板里预置的这几行洗掉。
+	grep -m 1 "Exit App =" ${CONFIG} >> ${CONFIG_TMP}
+	grep -m 1 "Save State =" ${CONFIG} >> ${CONFIG_TMP}
+	grep -m 1 "Load State =" ${CONFIG} >> ${CONFIG_TMP}
 	rm ${CONFIG}
 }
 

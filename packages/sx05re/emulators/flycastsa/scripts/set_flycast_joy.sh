@@ -26,11 +26,14 @@ declare -A FLYCAST_D_INDEXES=(
   [h0.2]=$(( BTN_H0+4 ))
 )
 
+# NOTE(w2xg2022): 基准为「标签对齐」(物理位置a/b/x/y→DC同名按钮)，对应
+# InvertGameButtons=false / InvertXYButtons=false 的「不翻」状态。下面按ES设定
+# 决定是否翻成「位置对齐」(与RA per-core remap同源、同语义)。
 declare -A FLYCAST_D_BUTTONS=(
-  [x]="btn_y"
-  [y]="btn_x"
-  [a]="btn_b"
-  [b]="btn_a"
+  [x]="btn_x"
+  [y]="btn_y"
+  [a]="btn_a"
+  [b]="btn_b"
   [leftshoulder]="btn_c"
   [rightshoulder]="btn_d"
   [lefttrigger]="btn_trigger_left"
@@ -49,16 +52,26 @@ declare -A FLYCAST_D_BUTTONS=(
   [righty]="axis_right_y"
 )
 
-BTN_SWAP_XY=$(get_ee_setting flycast_joy_swap_xy)
-if [[ "${BTN_SWAP_XY}" == "1" ]]; then
-  FLYCAST_D_BUTTONS[x]="btn_x"
-  FLYCAST_D_BUTTONS[y]="btn_y"
-fi
+# NOTE(w2xg2022): 游戏内AB/XY对调统一由ES的InvertGameButtons(AB)/InvertXYButtons(XY)
+# 驱动，与RetroArch per-core remap(见setsettings.sh)完全同源同语义，确保DC独立模拟器
+# 与走libretro时的手感一致，也让「手柄和蓝牙设置」里那两颗开关能真正透传到独立模拟器。
+# 语义(与RA一致)：设定=true → 该组「位置对齐」(PS/PSP几何符号手感)；false → 标签对齐。
+# 默认 InvertGameButtons=true(AB位置对齐)、InvertXYButtons=false(XY标签对齐)。
+# 旧的 flycast_joy_swap_ab/xy 独立ee设定不再使用(避免两套开关各行其是造成困惑)。
+EE_INVERT_AB=$(get_es_setting bool InvertGameButtons)
+[[ "${EE_INVERT_AB}" == "false" ]] || EE_INVERT_AB="true"
+EE_INVERT_XY=$(get_es_setting bool InvertXYButtons)
+[[ "${EE_INVERT_XY}" == "true" ]] || EE_INVERT_XY="false"
 
-BTN_SWAP_AB=$(get_ee_setting flycast_joy_swap_ab)
-if [[ "${BTN_SWAP_AB}" == "1" ]]; then
-  FLYCAST_D_BUTTONS[a]="btn_a"
-  FLYCAST_D_BUTTONS[b]="btn_b"
+if [[ "${EE_INVERT_AB}" == "true" ]]; then
+  # AB位置对齐：物理南(a)→DC B、物理东(b)→DC A
+  FLYCAST_D_BUTTONS[a]="btn_b"
+  FLYCAST_D_BUTTONS[b]="btn_a"
+fi
+if [[ "${EE_INVERT_XY}" == "true" ]]; then
+  # XY位置对齐：物理西(x)→DC Y、物理北(y)→DC X
+  FLYCAST_D_BUTTONS[x]="btn_y"
+  FLYCAST_D_BUTTONS[y]="btn_x"
 fi
 
 declare -A STICK_DIRECTIONS=(
