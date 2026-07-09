@@ -124,6 +124,11 @@ set_pad() {
   local B_COUNT_A=0
   local B_COUNT_D=0
 
+  # NOTE(w2xg2022): 捕捉SELECT/START/肩键L1R1/西键(X)各自的实体按键码，
+  # 供下面统一生成[combo]组合键区块使用(flycast v4原生支持真正的按键组合，
+  # 不需要gptokeyb外挂)。
+  local NUM_SELECT="" NUM_START="" NUM_L1="" NUM_R1="" NUM_WESTX=""
+
   for REC in "${GC_ARRAY[@]}"; do
       local KEY=$(echo ${REC} | cut -d ":" -f 1)
       local TVAL=$(echo ${REC} | cut -d ":" -f 2)
@@ -153,6 +158,17 @@ set_pad() {
 
           echo "bind$((B_COUNT_D++)) = ${FINAL_NUM}:${ACTION}" >> "${CONFIG_TMP_D}"
       fi
+
+      # NOTE(w2xg2022): 只在实体按键(b类型)时记录，摇杆方向(h/a类型)不适用组合键。
+      if [[ "${TYPE}" == "b" ]]; then
+          case "${KEY}" in
+              back)          NUM_SELECT="${NUM}" ;;
+              start)         NUM_START="${NUM}" ;;
+              leftshoulder)  NUM_L1="${NUM}" ;;
+              rightshoulder) NUM_R1="${NUM}" ;;
+              x)             NUM_WESTX="${NUM}" ;;
+          esac
+      fi
   done
 
   echo "[analog]" > "${CONFIG}"
@@ -160,6 +176,20 @@ set_pad() {
 
   echo -e "\n[digital]" >> "${CONFIG}"
   cat "${CONFIG_TMP_D}" | sort >> "${CONFIG}"
+
+  # NOTE(w2xg2022): 统一热键方案(比照RA菜单)：SELECT+START退出、SELECT+右肩键
+  # 存档、SELECT+左肩键读档、SELECT+西键(印X)呼出菜单。sequential=0表示「同时
+  # 按住」而非「依序按下」(flycast的ButtonCombo::sequential语义)。四者都要
+  # SELECT有实际按键码才写入，缺任一方就跳过避免产生无效combo。flycast原生
+  # 没有FPS显示切换的可绑定动作，此项无法比照RA做到，故不在此生成。
+  if [[ -n "${NUM_SELECT}" ]]; then
+    echo -e "\n[combo]" >> "${CONFIG}"
+    local B_COUNT_C=0
+    [[ -n "${NUM_START}" ]] && echo "bind$((B_COUNT_C++)) = ${NUM_SELECT},${NUM_START}:btn_escape:0" >> "${CONFIG}"
+    [[ -n "${NUM_R1}" ]]    && echo "bind$((B_COUNT_C++)) = ${NUM_SELECT},${NUM_R1}:btn_quick_save:0" >> "${CONFIG}"
+    [[ -n "${NUM_L1}" ]]    && echo "bind$((B_COUNT_C++)) = ${NUM_SELECT},${NUM_L1}:btn_jump_state:0" >> "${CONFIG}"
+    [[ -n "${NUM_WESTX}" ]] && echo "bind$((B_COUNT_C++)) = ${NUM_SELECT},${NUM_WESTX}:btn_menu:0" >> "${CONFIG}"
+  fi
 
   echo -e "\n[emulator]" >> "${CONFIG}"
   echo "mapping_name = ${JOY_NAME}" >> "${CONFIG}"
