@@ -53,6 +53,10 @@ PROJECT=Amlogic-ce DEVICE=Amlogic-no SUBDEVICE=X98mini IMAGE_SUFFIX=X98mini ARCH
 2. 把型号名加进 repo variable `MODELS`（多个型号用空格分隔）。
 3. 手动触发一次 workflow 验证编译是否成功，再观察自动月编译是否正常。
 
+## 使用说明
+
+- [手柄按键说明](docs/controller-guide.md) —— 手柄 A/B/X/Y 的三层处理（界面/热键/游戏内）、两种布局侦测、热键组合与游戏内位置对齐，附示意图。
+
 ## 参考仓库清单
 
 | 仓库 | 阵营 / 用途 |

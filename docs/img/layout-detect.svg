@@ -1,0 +1,27 @@
+<svg viewBox="0 0 660 340" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,-apple-system,'Noto Sans SC',sans-serif">
+  <rect x="0" y="0" width="660" height="340" rx="12" fill="#f4f5f7"/>
+  <text x="330" y="34" text-anchor="middle" font-size="19" font-weight="700" fill="#1c1e21">第一层：靠「按 A、按 X」判断两种最常见布局</text>
+  <text x="330" y="56" text-anchor="middle" font-size="12.5" fill="#6b7076">同一个字母、位置不同 —— 侦测精灵据此自动适配（A、X 为需按下的键，加白圈）</text>
+
+  <!-- Xbox 式 -->
+  <g transform="translate(0,70)">
+    <text x="165" y="24" text-anchor="middle" font-size="15" font-weight="700" fill="#1c1e21">Xbox 式（按 A 在「南」）</text>
+    <g transform="translate(165,140)">
+      <circle cx="0" cy="-58" r="30" fill="#3b82f6"/><text x="0" y="-51" text-anchor="middle" font-size="17" font-weight="700" fill="#fff">Y</text>
+      <circle cx="0" cy="58" r="30" fill="#22a06b" stroke="#fff" stroke-width="4"/><text x="0" y="65" text-anchor="middle" font-size="17" font-weight="700" fill="#fff">A</text>
+      <circle cx="-62" cy="0" r="30" fill="#e0a80d" stroke="#fff" stroke-width="4"/><text x="-62" y="6" text-anchor="middle" font-size="17" font-weight="700" fill="#fff">X</text>
+      <circle cx="62" cy="0" r="30" fill="#e0574a"/><text x="62" y="6" text-anchor="middle" font-size="17" font-weight="700" fill="#fff">B</text>
+    </g>
+  </g>
+
+  <!-- 任天堂式 -->
+  <g transform="translate(330,70)">
+    <text x="165" y="24" text-anchor="middle" font-size="15" font-weight="700" fill="#1c1e21">任天堂式（按 A 在「东」）</text>
+    <g transform="translate(165,140)">
+      <circle cx="0" cy="-58" r="30" fill="#e0a80d" stroke="#fff" stroke-width="4"/><text x="0" y="-51" text-anchor="middle" font-size="17" font-weight="700" fill="#fff">X</text>
+      <circle cx="0" cy="58" r="30" fill="#e0574a"/><text x="0" y="65" text-anchor="middle" font-size="17" font-weight="700" fill="#fff">B</text>
+      <circle cx="-62" cy="0" r="30" fill="#3b82f6"/><text x="-62" y="6" text-anchor="middle" font-size="17" font-weight="700" fill="#fff">Y</text>
+      <circle cx="62" cy="0" r="30" fill="#22a06b" stroke="#fff" stroke-width="4"/><text x="62" y="6" text-anchor="middle" font-size="17" font-weight="700" fill="#fff">A</text>
+    </g>
+  </g>
+</svg>
