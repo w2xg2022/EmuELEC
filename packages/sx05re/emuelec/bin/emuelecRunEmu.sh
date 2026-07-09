@@ -519,7 +519,19 @@ if [[ ${NETPLAY} != "No" ]]; then
 fi
 # End netplay
 
-SHADERSET=$(setsettings.sh "${PLATFORM}" "${ROMNAME_SHADER}" "${CORE}" --controllers="${CONTROLLERCONFIG}" --autosave="${AUTOSAVE}" --snapshot="${SNAPSHOT}")
+# NOTE(w2xg2022): 上面 line 476 的 CORE=${EMU%%_*} 会把带下划线的核心名截到第一个下划线
+# (mame2003_plus→mame2003、genesis_plus_gx→genesis 等)，导致 setsettings.sh 里按完整
+# 核心名建的 EE_GAMEBTN_CORENAME 表(游戏内AB/XY对调 per-core remap)对不上、整组带下划线
+# 的核心都写不出 remap。这里用未截断的完整核心名(直接从 --core= 取)传给 setsettings，
+# 只影响 setsettings 收到的 CORE(其内部 CORE 仅用于 atari800/gambatte 两个无下划线判断
+# 及该 remap 表查询，传完整名不会破坏既有逻辑)，不改动全局 CORE 以免影响其他下游用途。
+if [[ "${arguments}" == *"--core="* ]]; then
+    SS_CORE="${arguments##*--core=}"; SS_CORE="${SS_CORE%% *}"
+else
+    SS_CORE="${CORE}"
+fi
+
+SHADERSET=$(setsettings.sh "${PLATFORM}" "${ROMNAME_SHADER}" "${SS_CORE}" --controllers="${CONTROLLERCONFIG}" --autosave="${AUTOSAVE}" --snapshot="${SNAPSHOT}")
 #echo ${SHADERSET} # Only needed for debug
 
 if [[ ${SHADERSET} != 0 ]]; then
