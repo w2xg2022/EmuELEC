@@ -99,14 +99,12 @@ declare -A GC_PPSSPP_BUTTONS=(
   [lefty-1]="An.Down"
 )
 
-# NOTE(w2xg2022): 游戏内AB/XY对调透传——与flycast独立模拟器、RA per-core remap统一由
-# ES的InvertGameButtons(AB)/InvertXYButtons(XY)驱动，语义一致：设定=true该组「位置对齐」，
-# false则「翻转」。默认 InvertGameButtons=true(AB位置对齐:南✕东○)、InvertXYButtons=false
-# (XY翻转:西△北□)。让「手柄和蓝牙设置」那两颗开关能真正透传到PSP独立模拟器。
-EE_INVERT_AB=$(get_es_setting bool InvertGameButtons)
-[[ "${EE_INVERT_AB}" == "false" ]] || EE_INVERT_AB="true"
-EE_INVERT_XY=$(get_es_setting bool InvertXYButtons)
-[[ "${EE_INVERT_XY}" == "true" ]] || EE_INVERT_XY="false"
+# NOTE(w2xg2022): 手柄三层架构定案(2026-07)——第三层「游戏内」一律「写死原厂位置对齐」，
+# 不再透传、不再看任何 ES 开关(原 InvertGameButtons/InvertXYButtons 已从 ES 移除)。
+# 这里直接写死成「位置对齐」的值(等同旧默认，实机验证正确)：AB 不额外翻(南✕东○)、
+# XY 走下面既有分支达成 □西△北 的几何对齐。保留下面两个 if 结构以维持输出完全一致。
+EE_INVERT_AB="true"
+EE_INVERT_XY="false"
 
 if [[ "${EE_INVERT_AB}" == "false" ]]; then
   GC_PPSSPP_BUTTONS[a]="Circle"

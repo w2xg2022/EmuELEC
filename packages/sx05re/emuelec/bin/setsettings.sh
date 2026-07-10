@@ -664,10 +664,12 @@ if [[ -n "${EE_GAMEBTN_CORENAME_VAL}" ]]; then
     #     (跟es4all Settings一致；偵測後=mXYInverted)
     # 不翻的那組就不寫對應行(RA預設本來就是A=8/B=0/X=9/Y=1，正身)。兩組共用同一個
     # BEGIN/END InvertGameButtons標記包住(方便一次移除舊區塊，跨新舊版本都相容)。
-    EE_INVERT_AB=$(get_es_setting bool InvertGameButtons)
-    [[ "${EE_INVERT_AB}" == "false" ]] || EE_INVERT_AB="true"     # 預設true
-    EE_INVERT_XY=$(get_es_setting bool InvertXYButtons)
-    [[ "${EE_INVERT_XY}" == "true" ]] || EE_INVERT_XY="false"     # 預設false
+    # NOTE(w2xg2022): 手柄三层架构定案(2026-07)——第三层「游戏内」写死原厂位置对齐，
+    # 不再看任何 ES 开关(InvertGameButtons/InvertXYButtons 已从 ES 移除)。RA 的 autoconfig
+    # 是「标签对齐」(物理南→RetroPad A)，所以这段 per-core remap 仍需保留，靠它把 A/B
+    # 扳成位置对齐；直接写死成旧默认(AB 对齐、XY 不动)，实机验证正确。
+    EE_INVERT_AB="true"      # AB 位置对齐(a=0,b=8)
+    EE_INVERT_XY="false"     # XY 不翻(RA 默认 X=9/Y=1 即标签对齐)
     EE_RMP_DIR="/storage/.config/retroarch/config/remappings/${EE_GAMEBTN_CORENAME_VAL}"
     EE_RMP_FILE="${EE_RMP_DIR}/${EE_GAMEBTN_CORENAME_VAL}.rmp"
     if [[ -f "${EE_RMP_FILE}" ]]; then

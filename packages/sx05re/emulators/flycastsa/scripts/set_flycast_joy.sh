@@ -52,16 +52,12 @@ declare -A FLYCAST_D_BUTTONS=(
   [righty]="axis_right_y"
 )
 
-# NOTE(w2xg2022): 游戏内AB/XY对调统一由ES的InvertGameButtons(AB)/InvertXYButtons(XY)
-# 驱动，与RetroArch per-core remap(见setsettings.sh)完全同源同语义，确保DC独立模拟器
-# 与走libretro时的手感一致，也让「手柄和蓝牙设置」里那两颗开关能真正透传到独立模拟器。
-# 语义(与RA一致)：设定=true → 该组「位置对齐」(PS/PSP几何符号手感)；false → 标签对齐。
-# 默认 InvertGameButtons=true(AB位置对齐)、InvertXYButtons=false(XY标签对齐)。
-# 旧的 flycast_joy_swap_ab/xy 独立ee设定不再使用(避免两套开关各行其是造成困惑)。
-EE_INVERT_AB=$(get_es_setting bool InvertGameButtons)
-[[ "${EE_INVERT_AB}" == "false" ]] || EE_INVERT_AB="true"
-EE_INVERT_XY=$(get_es_setting bool InvertXYButtons)
-[[ "${EE_INVERT_XY}" == "true" ]] || EE_INVERT_XY="false"
+# NOTE(w2xg2022): 手柄三层架构定案(2026-07)——第三层「游戏内」一律「写死原厂位置对齐」，
+# 不再透传、不再看任何 ES 开关(原 InvertGameButtons/InvertXYButtons 已从 ES 移除)。
+# 直接写死成「位置对齐」的值(等同旧默认，实机验证正确)：AB 位置对齐(物理南→DC B、
+# 东→DC A)、XY 走标签对齐(下面 XY 分支不触发)。保留下面 if 结构以维持输出完全一致。
+EE_INVERT_AB="true"
+EE_INVERT_XY="false"
 
 if [[ "${EE_INVERT_AB}" == "true" ]]; then
   # AB位置对齐：物理南(a)→DC B、物理东(b)→DC A
