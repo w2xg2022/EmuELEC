@@ -370,8 +370,16 @@ jobs:
           if [ "$MISSING" = "1" ]; then exit 0; fi
           RELEASE_TAG="kernel-state-${{ matrix.model }}-${KERNEL_HASH}"
           if gh release view "${RELEASE_TAG}" --repo ${{ github.repository }} >/dev/null 2>&1; then
-            echo "雜湊${KERNEL_HASH}的kernel bundle已存在，無需重複上傳"
-            exit 0
+            # NOTE(w2xg2022): rebuild_kernel=true(修复缓存坏KERNEL)时,即使同hash也要覆盖——
+            # 旧bundle烤进了空initramfs是坏的,必须用本轮重编的好bundle替换,否则下轮又还原坏的。
+            if [ "${{ github.event.inputs.rebuild_kernel }}" = "true" ]; then
+              echo "rebuild_kernel=true → 删除旧的同hash kernel bundle,用本轮重编的好bundle覆盖"
+              gh release delete "${RELEASE_TAG}" --repo ${{ github.repository }} --yes --cleanup-tag 2>/dev/null || true
+              sleep 3
+            else
+              echo "雜湊${KERNEL_HASH}的kernel bundle已存在，無需重複上傳"
+              exit 0
+            fi
           fi
           KSTATE="${{ github.workspace }}/kstate.tar.zst"
           STAMP_PATHS=""
