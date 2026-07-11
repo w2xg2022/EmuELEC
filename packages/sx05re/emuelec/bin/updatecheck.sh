@@ -5,9 +5,15 @@
 
 . /etc/profile
 
-UPDINFO="https://raw.githubusercontent.com/EmuELEC/emuelec.github.io/master/settings/EE_update"
-UPDURL="https://github.com/EmuELEC/EmuELEC/releases/download/v"
-TEST_UPDURL="https://github.com/EmuELEC/EmuELEC-tests/releases/download/v"
+# NOTE(w2xg2022): 改指我们自己的仓库(接自己的更新，不再拿 EmuELEC 官方那份——官方没有
+# Amlogic-no 板型/没有我们的 es4all 定制)。云编译的固件本来就发到 w2xg2022/EmuELEC 的
+# Releases，等于文件主机已就绪。github 侧还需配套(推送时一并做)：
+#   1. 仓库放版本文件 updates/EE_update，格式每行「<版本>;stable」(取 ; 前为版本号)。
+#   2. Release 打 tag v<版本>，资产名须为 EmuELEC-Amlogic-no.aarch64-<版本>.tar(+ .sha256)。
+#   3. 版本号方案要能 > 设备 /usr/config/EE_VERSION(现=4.8)，否则判定「已最新」不更新。
+UPDINFO="https://raw.githubusercontent.com/w2xg2022/EmuELEC/main/updates/EE_update"
+UPDURL="https://github.com/w2xg2022/EmuELEC/releases/download/v"
+TEST_UPDURL="https://github.com/w2xg2022/EmuELEC/releases/download/v"
 BUILDATE=$(cat /usr/buildate)
 arguments="$@"
 
