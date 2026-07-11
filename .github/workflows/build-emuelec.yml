@@ -277,13 +277,21 @@ jobs:
             # NOTE(w2xg2022): ★rebuild_kernel开关★——坏的KERNEL(烤进空initramfs)会被缓存进
             # install_pkg/linux+kernel bundle,后续run即使build/补回来也不会重烤KERNEL(stamp
             # 已完成)。手动触发rebuild_kernel=true时,清掉linux+initramfs的stamp/install_pkg/image,
-            # 强制它们连同KERNEL bootimg一起重建(用已修好的build/→好initramfs烤进KERNEL)。用一次
-            # 产出好KERNEL后,新的checkpoint/kernel bundle就缓存了好的,之后不用再开这开关。
+            # 强制它们连同KERNEL bootimg一起重建(用已修好的build/→好initramfs烤进KERNEL)。
+            # ★2026-07-11教训★：第一版只清了linux+initramfs两个包，结果新编的kernel配上了
+            # kernel bundle里其余14个耦合驱动包(gpu-aml/media_modules-aml/w1-aml等)的旧.ko
+            # (从checkpoint还原、对应旧kernel，未跟着重编)——vermagic/符号不匹配，驱动加载
+            # 失败，gpu-aml(Mali显示驱动)挂了直接花屏/雪花。教训：kernel bundle是"linux+14个
+            # 驱动"绑定的一个原子集合，重编kernel时**必须把整组15个包一起清掉重编**，不能只动
+            # linux，否则新旧kernel/驱动版本错位。
             if [ "${{ github.event.inputs.rebuild_kernel }}" = "true" ]; then
-              echo "[rebuild_kernel] 强制重建 linux + initramfs + 重烤KERNEL"
-              rm -rf "${BD_FIX}.stamps/linux" "${BD_FIX}.stamps/initramfs" \
-                     "${BD_FIX}install_pkg/linux-"* "${BD_FIX}install_pkg/initramfs-"* \
-                     "${BD_FIX}image" 2>/dev/null
+              echo "[rebuild_kernel] 强制重建整组kernel bundle(linux+14个耦合驱动)+initramfs+重烤KERNEL"
+              for kp in linux gpu-aml media_modules-aml aic8800-sdio ap6xxx-aml mt76 mt7668-wifi-bt \
+                        RTL8189FS RTL8723DS-aml RTL8851BU RTL8852BE-aml RTL8852BS-aml RTW88 \
+                        w1-aml wifi_dummy-aml initramfs; do
+                rm -rf "${BD_FIX}.stamps/${kp}" "${BD_FIX}install_pkg/${kp}-"* 2>/dev/null
+              done
+              rm -rf "${BD_FIX}image" 2>/dev/null
             fi
           fi
           (
