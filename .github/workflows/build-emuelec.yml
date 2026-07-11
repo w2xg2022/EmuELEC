@@ -254,6 +254,22 @@ jobs:
           mkdir -p "${{ github.workspace }}/.tmp" "${{ github.workspace }}/.home"
           export TMPDIR="${{ github.workspace }}/.tmp"
           export HOME="${{ github.workspace }}/.home"
+
+          # NOTE(w2xg2022): ★initramfs自癒★——若某initramfs相关包已标记完成(stamp在)但
+          # build/目录缺失(从旧checkpoint还原、或被裁掉),make image的(init)安装会从缺失的
+          # $PKG_BUILD复制到0文件→initramfs打包成空(195B ramdisk)→固件卡开机。这里检测并
+          # 清掉这些包的stamp强制重编(重建build/),保证initramfs能正确组出。有build/的不动
+          # (走快取,不浪费时间)。首轮bootstrap会重编含gcc(~慢),之后checkpoint已保留其build/
+          # (见Save步骤)就不再重编。
+          BD_FIX=$(ls -d build.*/ 2>/dev/null | head -1)
+          if [ -n "$BD_FIX" ]; then
+            for p in busybox gcc util-linux e2fsprogs dosfstools splash-image terminus-font bkeymaps initramfs; do
+              if ls "${BD_FIX}.stamps/${p}/"* >/dev/null 2>&1 && ! ls -d "${BD_FIX}build/${p}-"* >/dev/null 2>&1; then
+                echo "[initramfs自癒] ${p}: build/缺失但已标记完成 → 清stamp强制重编"
+                rm -rf "${BD_FIX}.stamps/${p}"
+              fi
+            done
+          fi
           (
             PROJECT=${{ env.PROJECT }} DEVICE=${{ env.DEVICE }} SUBDEVICE=${{ matrix.model }} \
             ARCH=${{ env.ARCH }} DISTRO=${{ env.DISTRO }} TMPDIR="${TMPDIR}" HOME="${HOME}" make image
@@ -287,7 +303,12 @@ jobs:
                 # 否則ES/icu-dependent套件安裝時找不到build目錄而失敗。
                 # NOTE(w2xg2022): linux不再需要在这里特殊保留——kernel bundle只快取
                 # .stamps+install_pkg，不需要build/linux-*，可以像一般套件一样清理。
-                case "$d" in glibc-*|icu-*) continue;; esac
+                # NOTE(w2xg2022): ★initramfs相关包的build/绝不能清★——make image的
+                # initramfs「(init)安装」pass是从$PKG_BUILD(build/)复制文件进initramfs根
+                # (busybox/util-linux等的makeinstall_init),不是读install_pkg。清了build/
+                # 会导致initramfs打包成空(1024B→195B ramdisk)、固件卡开机(SYSTEM正常但
+                # 无initramfs)。这几个=log里有(init)安装的11个包。
+                case "$d" in glibc-*|icu-*|busybox-*|gcc-*|util-linux-*|e2fsprogs-*|dosfstools-*|splash-image-*|terminus-font-*|bkeymaps-*|initramfs-*) continue;; esac
                 if [ -d "${BUILD_DIR}build/$d" ]; then
                   rm -rf "${BUILD_DIR}build/$d"
                   CLEANED=$((CLEANED+1))
@@ -379,15 +400,26 @@ jobs:
           # 的build目錄——它們在後面套件的安裝階段還會被引用(glibc:ES取charmaps/localedef;
           # icu:--with-cross-build)，剝掉會讓還原後的組裝失敗。保留這兩個後，把它們也
           # 一併打包進checkpoint，下一輪還原就直接有、不用重編。
-          echo "清理build/暫存工作目錄(保留glibc/icu)以騰出空間..."
+          echo "清理build/暫存工作目錄(保留glibc/icu+initramfs相关包)以騰出空間..."
           # NOTE(w2xg2022): linux不再特殊保留——kernel bundle(獨立的Save步驟)只快取
           # .stamps+install_pkg，不需要build/linux-*，可以跟一般套件一樣清掉騰空間。
+          # NOTE(w2xg2022): ★initramfs相关包的build/必须保留★——make image的initramfs
+          # 「(init)安装」pass从$PKG_BUILD(build/)复制文件(busybox/gcc-libgcc/util-linux等
+          # 的makeinstall_init),不是读install_pkg。build/被裁→initramfs打包成空(195B
+          # ramdisk)→固件SYSTEM正常但无initramfs、卡开机。这几个=有(init)安装的包。
           if [ -d "${BUILD_DIR}build" ]; then
             find "${BUILD_DIR}build" -mindepth 1 -maxdepth 1 -type d \
-              ! -name 'glibc-*' ! -name 'icu-*' -exec rm -rf {} + 2>/dev/null || true
+              ! -name 'glibc-*' ! -name 'icu-*' \
+              ! -name 'busybox-*' ! -name 'gcc-*' ! -name 'util-linux-*' \
+              ! -name 'e2fsprogs-*' ! -name 'dosfstools-*' ! -name 'splash-image-*' \
+              ! -name 'terminus-font-*' ! -name 'bkeymaps-*' ! -name 'initramfs-*' \
+              -exec rm -rf {} + 2>/dev/null || true
           fi
-          # 收集要保留的glibc/icu build目錄(可能不存在，用glob展開)
-          KEEP_BUILD=$(ls -d "${BUILD_DIR}build/glibc-"* "${BUILD_DIR}build/icu-"* 2>/dev/null)
+          # 收集要保留的build目錄(glibc/icu + initramfs相关包，可能不存在，用glob展開)
+          KEEP_BUILD=$(ls -d "${BUILD_DIR}build/glibc-"* "${BUILD_DIR}build/icu-"* \
+            "${BUILD_DIR}build/busybox-"* "${BUILD_DIR}build/gcc-"* "${BUILD_DIR}build/util-linux-"* \
+            "${BUILD_DIR}build/e2fsprogs-"* "${BUILD_DIR}build/dosfstools-"* "${BUILD_DIR}build/splash-image-"* \
+            "${BUILD_DIR}build/terminus-font-"* "${BUILD_DIR}build/bkeymaps-"* "${BUILD_DIR}build/initramfs-"* 2>/dev/null)
           echo "打包接力狀態(工具鏈+已裝套件+進度標記+glibc/icu build)到大容量分區..."
           df -h "${{ github.workspace }}"
           if ! tar -I 'zstd -T0 -3' -cf "${STATE_FILE}" \
