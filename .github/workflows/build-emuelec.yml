@@ -7,6 +7,11 @@ on:
         description: '要编译的型号列表(空格分隔)，留空则用 repo variable MODELS'
         required: false
         default: ''
+      rebuild_kernel:
+        description: '强制重编内核+initramfs(修复缓存的KERNEL烤进空initramfs的坑,用一次即可)'
+        type: boolean
+        required: false
+        default: false
   # NOTE(w2xg2022): 月度cron暂时停用——目前还在适配期(平行编译/接力机制调试中)，
   # 先不让它自动触发以免干扰或浪费云端时数。适配稳定后把下面schedule取消注释即可
   # 重新启用。启用后的逻辑已做好(见prepare的gate步骤)：仅在repo commit相对上次
@@ -269,6 +274,17 @@ jobs:
                 rm -rf "${BD_FIX}.stamps/${p}"
               fi
             done
+            # NOTE(w2xg2022): ★rebuild_kernel开关★——坏的KERNEL(烤进空initramfs)会被缓存进
+            # install_pkg/linux+kernel bundle,后续run即使build/补回来也不会重烤KERNEL(stamp
+            # 已完成)。手动触发rebuild_kernel=true时,清掉linux+initramfs的stamp/install_pkg/image,
+            # 强制它们连同KERNEL bootimg一起重建(用已修好的build/→好initramfs烤进KERNEL)。用一次
+            # 产出好KERNEL后,新的checkpoint/kernel bundle就缓存了好的,之后不用再开这开关。
+            if [ "${{ github.event.inputs.rebuild_kernel }}" = "true" ]; then
+              echo "[rebuild_kernel] 强制重建 linux + initramfs + 重烤KERNEL"
+              rm -rf "${BD_FIX}.stamps/linux" "${BD_FIX}.stamps/initramfs" \
+                     "${BD_FIX}install_pkg/linux-"* "${BD_FIX}install_pkg/initramfs-"* \
+                     "${BD_FIX}image" 2>/dev/null
+            fi
           fi
           (
             PROJECT=${{ env.PROJECT }} DEVICE=${{ env.DEVICE }} SUBDEVICE=${{ matrix.model }} \
