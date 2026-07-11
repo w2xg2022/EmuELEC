@@ -127,7 +127,7 @@
   # Space separated list is supported,
   # e.g. FIRMWARE="dvb-firmware misc-firmware wlan-firmware"
     FIRMWARE="misc-firmware wlan-firmware dvb-firmware brcmfmac_sdio-firmware-aml
-            rtkbt-firmware-aml qca-firmware-aml"
+            rtkbt-firmware-aml qca-firmware-aml aml-w155s2-bt-firmware"
 
   # build and install ATV IR remote support (yes / no)
     ATVCLIENT_SUPPORT="no"

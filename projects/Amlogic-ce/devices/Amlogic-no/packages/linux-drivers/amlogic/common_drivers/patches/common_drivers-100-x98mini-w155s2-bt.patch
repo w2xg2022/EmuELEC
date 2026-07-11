@@ -1,0 +1,57 @@
+diff -Naur a/arch/arm64/boot/dts/amlogic/s4_s905w2_ap201_1g.dts b/arch/arm64/boot/dts/amlogic/s4_s905w2_ap201_1g.dts
+--- a/arch/arm64/boot/dts/amlogic/s4_s905w2_ap201_1g.dts
++++ b/arch/arm64/boot/dts/amlogic/s4_s905w2_ap201_1g.dts
+@@ -1333,7 +1333,8 @@
+ };
+ 
+ &aml_bt {
+-	status = "okay";
++	/* disabled: GPIOX_17 is now owned by the hci_aml serdev node under &uart_A */
++	status = "disabled";
+ 	reset-gpios = <&gpio    GPIOX_17 GPIO_ACTIVE_HIGH>;
+ 	btwakeup-gpios = <&gpio    GPIOX_18 GPIO_ACTIVE_HIGH>;
+ 	hostwake-gpios = <&gpio GPIOX_19 GPIO_ACTIVE_HIGH>;
+@@ -1348,6 +1349,17 @@
+ &uart_A {
+ 	status = "okay";
+ 	uart-has-rtscts;
++
++	/* Amlogic W155S2 (W1 combo) Bluetooth, brought up by hci_aml (serdev) */
++	bluetooth {
++		compatible = "amlogic,w155s2-bt";
++		enable-gpios = <&gpio GPIOX_17 GPIO_ACTIVE_HIGH>;
++		firmware-name = "amlogic/aml_w155s2_bt_uart.bin";
++		clocks = <&bt_lpo_32k>;
++		vddio-supply = <&bt_vddio>;
++		current-speed = <115200>;
++		max-speed = <4000000>;
++	};
+ };
+ 
+ &gpu {
+@@ -1369,3 +1381,25 @@
+ 	/*0: 709/601  1: bt2020*/
+ 	tx_op_color_primary = <0>;
+ };
++
++/* Stub providers for the hci_aml bluetooth node.
++ * The W1 combo die is already powered and clocked via the WiFi path
++ * (pwm_ef 32k, combo supply), so these only satisfy the driver API.
++ */
++/ {
++	bt_lpo_32k: bt-lpo-32k {
++		compatible = "fixed-clock";
++		#clock-cells = <0>;
++		clock-frequency = <32768>;
++		clock-output-names = "bt_lpo_32k";
++	};
++
++	bt_vddio: bt-vddio {
++		compatible = "regulator-fixed";
++		regulator-name = "bt_vddio";
++		regulator-min-microvolt = <1800000>;
++		regulator-max-microvolt = <1800000>;
++		regulator-always-on;
++		regulator-boot-on;
++	};
++};
