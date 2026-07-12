@@ -28,7 +28,11 @@ if [ "${RS:-0}" -lt 500000 ]; then
 fi
 
 # 抽出 ramdisk(zstd 压缩的 cpio),列文件名,确认含动态链接器/libc
-if dd if="$LZO" bs=2048 skip=$((OFF/2048)) count=$(((RS+2047)/2048)) 2>/dev/null \
+# ★2026-07-12 修假阴性★:原本 bs=2048 count=块数 会多读到 ramdisk 尾部之后的字节,
+# zstd/cpio 遇到多余尾巴报错、配合调用方的 pipefail → 整条管线非零 → 明明有 glibc 也
+# 判成「缺」(实测坑:同一 KERNEL 手动 bs=1 skip=OFF count=RS 能看到 libc.so.6,此处却漏)。
+# 改用 iflag=skip_bytes,count_bytes 精确读 [OFF, OFF+RS) 这一段(bs=1M 保持快),不多不少。
+if dd if="$LZO" bs=1M iflag=skip_bytes,count_bytes skip="$OFF" count="$RS" 2>/dev/null \
    | zstd -dc 2>/dev/null | cpio -t 2>/dev/null | grep -qE "ld-linux-aarch64\.so|libc\.so\.6"; then
   echo "initramfs 完好(ramdisk_size=${RS}B, 含 glibc)"
   exit 0

@@ -187,6 +187,16 @@ jobs:
                   rm -rf "${BD}.stamps/${p}"
                 fi
               done
+              # ★2026-07-12 根治花屏(真根因)★:同理修 install_init。旧 checkpoint 只存了 .stamps
+              # 没存 install_init/,还原后 build_init 标记在=以为 init 装好而跳过,但 install_init/<pkg>/
+              # 内容没了 → initramfs 缺 glibc 等 → 花屏。对 initramfs 包集:build_init 标记在但
+              # install_init/<pkg> 缺,就清 build_init 强制重装 init(不清 build 目录,init 装配读得到 .so)。
+              for p in glibc busybox gcc util-linux e2fsprogs dosfstools splash-image terminus-font bkeymaps; do
+                if [ -f "${BD}.stamps/${p}/build_init" ] && ! ls -d "${BD}install_init/${p}-"* >/dev/null 2>&1; then
+                  echo "checkpoint有${p} build_init标记但缺install_init目录，清build_init强制重装init"
+                  rm -f "${BD}.stamps/${p}/build_init"
+                fi
+              done
             else
               echo "接力状态拼回后损坏，丢弃，从零开始建置"
               rm -f "${STATE_FILE}"
@@ -310,13 +320,11 @@ jobs:
                         RTL8189FS RTL8723DS-aml RTL8851BU RTL8852BE-aml RTL8852BS-aml RTW88 \
                         w1-aml wifi_dummy-aml initramfs; do
                 rm -rf "${BD_FIX}.stamps/${kp}" "${BD_FIX}install_pkg/${kp}-"* 2>/dev/null
-                # ★2026-07-12 根治花屏★:glibc/libc 必须连 build/ 目录一起清,强制从解压全新编译。
-                # 之前只清 stamp+install_pkg,glibc 会在(checkpoint 还原的、可能残缺的)旧 build/ 上
-                # 增量 make,不重新产出 .<target>/elf/ld*.so、libc.so* 等 → glibc 的 makeinstall_init
-                # 复制不到 libc 进 initramfs → 花屏。实测坐实:自愈重建后 ramdisk 从 3.1MB 长到 4.3MB
-                # 但仍无 libc.so.6。清 build/ 后 glibc 全新编、build/ 变完整,之后 checkpoint 存的也
-                # 完整,一次 rebuild_kernel 后永久根治。
-                case "$kp" in glibc|libc) rm -rf "${BD_FIX}build/${kp}-"* 2>/dev/null ;; esac
+                # NOTE(w2xg2022): ★不要清 glibc/libc 的 build/ 目录★(2026-07-12 VM 实测坐实)。
+                # glibc 的 .so 本来就在 checkpoint 保留的 build/ 里,init 安装(makeinstall_init)读得到;
+                # 清了 build/ 反而害 glibc 只重编 target、init 安装拿不到 .so → install_init/glibc 空 →
+                # initramfs 缺 libc → 花屏。真根因是 checkpoint 没存 install_init(见 save 步骤 + 上面
+                # restore 的 install_init 自愈),不是 build/ 残缺。
               done
               rm -rf "${BD_FIX}image" 2>/dev/null
             fi
@@ -479,10 +487,15 @@ jobs:
             "${BUILD_DIR}build/busybox-"* "${BUILD_DIR}build/gcc-"* "${BUILD_DIR}build/util-linux-"* \
             "${BUILD_DIR}build/e2fsprogs-"* "${BUILD_DIR}build/dosfstools-"* "${BUILD_DIR}build/splash-image-"* \
             "${BUILD_DIR}build/terminus-font-"* "${BUILD_DIR}build/bkeymaps-"* "${BUILD_DIR}build/initramfs-"* 2>/dev/null)
-          echo "打包接力状态(工具链+已装套件+进度标记+glibc/icu build)到大容量分区..."
+          # ★2026-07-12 根治花屏(真根因)★:必须一起保存 install_init/(initramfs 各包的 init 装配
+          # 产物)。之前只存 .stamps 不存 install_init → 还原后 build_init 标记在=以为装好而跳过,
+          # 但 install_init/<pkg>/ 内容没了 → initramfs 缺 glibc(libc.so.6)等 → 花屏。install_init
+          # 不大(就是 initramfs 内容),存它最省事、最稳。
+          KEEP_INIT=$(ls -d "${BUILD_DIR}install_init" 2>/dev/null)
+          echo "打包接力状态(工具链+已装套件+进度标记+glibc/icu build+install_init)到大容量分区..."
           df -h "${{ github.workspace }}"
           if ! tar -I 'zstd -T0 -3' -cf "${STATE_FILE}" \
-               "${BUILD_DIR}toolchain" "${BUILD_DIR}install_pkg" "${BUILD_DIR}.stamps" ${KEEP_BUILD}; then
+               "${BUILD_DIR}toolchain" "${BUILD_DIR}install_pkg" "${BUILD_DIR}.stamps" ${KEEP_INIT} ${KEEP_BUILD}; then
             echo "打包失败(多半是空间不足)，不上传残档"
             rm -f "${STATE_FILE}"
             exit 1
