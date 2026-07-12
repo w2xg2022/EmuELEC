@@ -287,23 +287,26 @@ jobs:
             # 决定是否重建整组kernel lane：①手动rebuild_kernel=true ②★自愈检测★
             NEED_KREBUILD=0
             [ "${{ github.event.inputs.rebuild_kernel }}" = "true" ] && NEED_KREBUILD=1
-            # ★自愈★：缓存的 install_pkg/linux/.image/Image.lzo 是烤好的Android bootimg,读它
-            # header offset16的ramdisk_size,<1MB=initramfs烤空了(坏KERNEL,卡开机/雪花的根源,
-            # 会经checkpoint/bundle反复传播)。自动升级为整组重建修好它。这样普通触发也能自愈,
-            # 不必人工记得开rebuild_kernel;好的缓存(ramdisk正常)则跳过,不浪费时间。
+            # ★自愈★：检查缓存的 install_pkg/linux/.image/Image.lzo(烤好的KERNEL)里的
+            # initramfs 是否完好——不仅要非空,还必须含 glibc 动态链接器(ld-linux-aarch64.so.1)。
+            # ★2026-07-12根因坐实★：花屏/雪花的真凶=云端缓存的 glibc build/ 不完整,glibc 的
+            # makeinstall_init 复制不到 ld*.so/libc.so → initramfs 缺 glibc → busybox(动态链接)
+            # exec 失败 → 内核 panic → 花屏。这种 initramfs 仍有 3MB(只看大小抓不到),必须
+            # 检查内容有没有 libc。检测脚本见 .github/scripts/check-image-initramfs.sh。
             LZO=$(ls "${BD_FIX}install_pkg/linux-"*/.image/Image.lzo 2>/dev/null | head -1)
             if [ "$NEED_KREBUILD" = 0 ] && [ -f "$LZO" ]; then
-              RS=$(python3 -c "import struct;d=open('$LZO','rb').read(20);print(struct.unpack('<I',d[16:20])[0] if d[:8]==b'ANDROID!' else 9999999)" 2>/dev/null || echo 9999999)
-              if [ "${RS:-9999999}" -lt 1000000 ]; then
-                echo "[KERNEL自愈] 缓存的Image.lzo initramfs为空(ramdisk=${RS}B)→自动升级为整组kernel lane重建"
-                NEED_KREBUILD=1
+              if bash "${{ github.workspace }}/.github/scripts/check-image-initramfs.sh" "$LZO"; then
+                echo "[KERNEL自愈] 缓存Image.lzo的initramfs完好(含glibc),跳过kernel重建"
               else
-                echo "[KERNEL自愈] 缓存的Image.lzo initramfs正常(ramdisk=${RS}B),跳过kernel重建"
+                echo "[KERNEL自愈] 缓存Image.lzo的initramfs损坏→自动升级为整组kernel lane重建"
+                NEED_KREBUILD=1
               fi
             fi
             if [ "$NEED_KREBUILD" = 1 ]; then
-              echo "[kernel重建] 强制重建整组kernel bundle(linux+14个耦合驱动)+initramfs+重烤KERNEL"
-              for kp in linux gpu-aml media_modules-aml aic8800-sdio ap6xxx-aml mt76 mt7668-wifi-bt \
+              # ★必须连 glibc/libc 一起重建★：花屏根因就是 glibc build/ 不完整,只重编 linux/
+              # 驱动而不重编 glibc,glibc 的 .<target>/elf/ld*.so 还是缺,initramfs 照样没 libc。
+              echo "[kernel重建] 强制重建 glibc + 整组kernel bundle(linux+14驱动) + initramfs + 重烤KERNEL"
+              for kp in glibc libc linux gpu-aml media_modules-aml aic8800-sdio ap6xxx-aml mt76 mt7668-wifi-bt \
                         RTL8189FS RTL8723DS-aml RTL8851BU RTL8852BE-aml RTL8852BS-aml RTW88 \
                         w1-aml wifi_dummy-aml initramfs; do
                 rm -rf "${BD_FIX}.stamps/${kp}" "${BD_FIX}install_pkg/${kp}-"* 2>/dev/null
