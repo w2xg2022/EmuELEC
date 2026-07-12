@@ -1,21 +1,21 @@
-# NOTE(w2xg2022): 平行編譯199個模擬器核心的workflow，配合主workflow(build-emuelec.yml)
-# 的接力狀態(build-state-<型号> Release)使用。流程：
-#   1. prepare：把libretro(158)分6組、emulators(41)分2組(round-robin平衡重量級核心)，
-#      共8份清單當artifact。
-#   2. build-chunk(8個平行job)：每個還原同一份base checkpoint，只scripts/build自己那
-#      ~25個核心，把新產生的install_pkg+.stamps打包成delta，切塊上傳到
-#      build-cores-delta-<型号> Release(各chunk用不同asset名，互不干擾)。
-#   3. merge：等8份都完成，還原base，把8份delta疊加進去，重新打包覆蓋回
+# NOTE(w2xg2022): 平行编译199个模拟器核心的workflow，配合主workflow(build-emuelec.yml)
+# 的接力状态(build-state-<型号> Release)使用。流程：
+#   1. prepare：把libretro(158)分6组、emulators(41)分2组(round-robin平衡重量级核心)，
+#      共8份清单当artifact。
+#   2. build-chunk(8个平行job)：每个还原同一份base checkpoint，只scripts/build自己那
+#      ~25个核心，把新产生的install_pkg+.stamps打包成delta，切块上传到
+#      build-cores-delta-<型号> Release(各chunk用不同asset名，互不干扰)。
+#   3. merge：等8份都完成，还原base，把8份delta叠加进去，重新打包覆盖回
 #      build-state-<型号>(base因此含全部核心)。
-# 之後再跑一次主workflow即可還原這份「已含全部核心」的base，只剩少量非核心套件+
-# 組裝映像，通常一輪就能完成。
+# 之后再跑一次主workflow即可还原这份「已含全部核心」的base，只剩少量非核心套件+
+# 组装映像，通常一轮就能完成。
 name: Build EmuELEC (parallel cores)
 
 on:
   workflow_dispatch:
     inputs:
       model:
-        description: '型号(預設X98mini)'
+        description: '型号(预设X98mini)'
         required: false
         default: 'X98mini'
 
@@ -47,7 +47,7 @@ jobs:
           # 会让重核心扎堆。要调整分组直接改 .github/chunk-lists/ 里的档案。
           mkdir -p chunks
           cp .github/chunk-lists/chunk-*.txt chunks/
-          for i in 0 1 2 3 4 5 6 7; do echo "chunk-$i: $(grep -vc '^$' chunks/chunk-$i.txt) 個"; done
+          for i in 0 1 2 3 4 5 6 7; do echo "chunk-$i: $(grep -vc '^$' chunks/chunk-$i.txt) 个"; done
           echo 'matrix=[0,1,2,3,4,5,6,7]' >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
@@ -66,9 +66,9 @@ jobs:
       - name: Maximize build space
         uses: easimon/maximize-build-space@v10
         with:
-          # NOTE(w2xg2022): 平行組還原base(11GB)在大分區，但apt裝相依到根分區。
-          # 16384時實測有runner(chunk-4)根分區踩線被apt塞爆(No space left)。調到
-          # 24576給apt更多餘裕；大分區仍有~50GB足夠base(11GB)+本組核心。
+          # NOTE(w2xg2022): 平行组还原base(11GB)在大分区，但apt装相依到根分区。
+          # 16384时实测有runner(chunk-4)根分区踩线被apt塞爆(No space left)。调到
+          # 24576给apt更多余裕；大分区仍有~50GB足够base(11GB)+本组核心。
           root-reserve-mb: 24576
           swap-size-mb: 512
           remove-dotnet: 'true'
@@ -96,15 +96,15 @@ jobs:
             cat "${STATE_DIR}"/state.tar.zst.part* > "${STATE_FILE}"
             rm -rf "${STATE_DIR}"
             if zstd -t "${STATE_FILE}" 2>/dev/null; then
-              echo "base完整性OK，還原中..."
+              echo "base完整性OK，还原中..."
               tar -I zstd -xf "${STATE_FILE}" -C "${{ github.workspace }}"
               rm -f "${STATE_FILE}"
               du -sh build.*/toolchain build.*/install_pkg build.*/.stamps 2>/dev/null
             else
-              echo "base損壞，無法平行編譯，中止"; exit 1
+              echo "base损坏，无法平行编译，中止"; exit 1
             fi
           else
-            echo "沒有base checkpoint，請先用主workflow跑出base再來平行，中止"; exit 1
+            echo "没有base checkpoint，请先用主workflow跑出base再来平行，中止"; exit 1
           fi
 
       - name: Install build dependencies
@@ -125,36 +125,36 @@ jobs:
         id: build_chunk
         run: |
           BUILD_DIR=$(ls -d build.*/ 2>/dev/null | head -1)
-          [ -z "$BUILD_DIR" ] && { echo "找不到base建置資料夾"; exit 1; }
+          [ -z "$BUILD_DIR" ] && { echo "找不到base建置资料夹"; exit 1; }
           mkdir -p "${{ github.workspace }}/.tmp" "${{ github.workspace }}/.home"
           export TMPDIR="${{ github.workspace }}/.tmp"
           export HOME="${{ github.workspace }}/.home"
-          # delta基準點：這時間之後被建置系統改動的install_pkg/.stamps就是本組成果
+          # delta基准点：这时间之后被建置系统改动的install_pkg/.stamps就是本组成果
           touch "${{ github.workspace }}/marker"
           sleep 2
           LIST=$(cat "chunks/chunk-${{ matrix.chunk }}.txt")
-          echo "本組(chunk ${{ matrix.chunk }})要編：" $LIST
-          # NOTE(w2xg2022): 容錯迴圈——單一核心失敗只記錄+跳過，繼續編其餘的，
-          # 絕不因為一個壞核心就砍掉整組(否則8組各撞一個壞核心就全滅)。真的編不
-          # 過的核心會被寫進failed清單，後續彙整看是個別壞掉(跳過)還是系統性問題。
-          # 已在base裡的核心靠.stamps秒跳過；缺的相依scripts/build會自動補。
-          # 5小時40分主動停，留時間給delta打包上傳。
+          echo "本组(chunk ${{ matrix.chunk }})要编：" $LIST
+          # NOTE(w2xg2022): 容错回圈——单一核心失败只记录+跳过，继续编其余的，
+          # 绝不因为一个坏核心就砍掉整组(否则8组各撞一个坏核心就全灭)。真的编不
+          # 过的核心会被写进failed清单，后续汇整看是个别坏掉(跳过)还是系统性问题。
+          # 已在base里的核心靠.stamps秒跳过；缺的相依scripts/build会自动补。
+          # 5小时40分主动停，留时间给delta打包上传。
           FAILED=""; OK=0
           MAX=20400; START=$(date +%s)
           for pkg in $LIST; do
             ELAPSED=$(( $(date +%s) - START ))
-            if [ "$ELAPSED" -ge "$MAX" ]; then echo "時間快到，停止，已編的照樣打包"; break; fi
+            if [ "$ELAPSED" -ge "$MAX" ]; then echo "时间快到，停止，已编的照样打包"; break; fi
             echo "=== build $pkg ($ELAPSED s) ==="
             if PROJECT=$PROJECT DEVICE=$DEVICE SUBDEVICE=${{ needs.prepare.outputs.model }} \
                  ARCH=$ARCH DISTRO=$DISTRO TMPDIR="$TMPDIR" HOME="$HOME" \
                  scripts/build "$pkg"; then
               OK=$((OK+1))
             else
-              echo "!!! build $pkg 失敗(跳過，繼續下一個)"
+              echo "!!! build $pkg 失败(跳过，继续下一个)"
               FAILED="$FAILED $pkg"
             fi
           done
-          echo "本組完成：成功${OK}個，失敗:${FAILED:-無}"
+          echo "本组完成：成功${OK}个，失败:${FAILED:-无}"
           echo "$FAILED" | tr ' ' '\n' | sed '/^$/d' > "${{ github.workspace }}/failed-${{ matrix.chunk }}.txt"
 
       - name: Package & upload delta
@@ -164,22 +164,22 @@ jobs:
         run: |
           set -o pipefail
           BUILD_DIR=$(ls -d build.*/ 2>/dev/null | head -1)
-          [ -z "$BUILD_DIR" ] && { echo "無建置資料夾，跳過"; exit 0; }
+          [ -z "$BUILD_DIR" ] && { echo "无建置资料夹，跳过"; exit 0; }
           MARKER="${{ github.workspace }}/marker"
-          [ -f "$MARKER" ] || { echo "無marker(建置沒開始)，跳過delta"; exit 0; }
+          [ -f "$MARKER" ] || { echo "无marker(建置没开始)，跳过delta"; exit 0; }
           DELTA="${{ github.workspace }}/delta-${{ matrix.chunk }}.tar.zst"
-          # NOTE(w2xg2022): delta要一併打包toolchain(內含sysroot)在marker之後的改動！
-          # 之前只打包install_pkg+.stamps，漏掉了「本組編核心時當依賴順手編出的函式庫
-          # (libpcap/fluidsynth等)裝進sysroot的標頭/庫」。結果base有那些lib的stamp卻
-          # 缺sysroot內容，後面組裝時要重編依賴它們的straggler就找不到標頭而失敗。
-          # --newer-mtime只抓marker後改動的檔，sysroot新增量很小，delta不會變太大。
-          echo "打包delta(marker之後改動的install_pkg/.stamps/toolchain-sysroot)..."
+          # NOTE(w2xg2022): delta要一并打包toolchain(内含sysroot)在marker之后的改动！
+          # 之前只打包install_pkg+.stamps，漏掉了「本组编核心时当依赖顺手编出的函式库
+          # (libpcap/fluidsynth等)装进sysroot的标头/库」。结果base有那些lib的stamp却
+          # 缺sysroot内容，后面组装时要重编依赖它们的straggler就找不到标头而失败。
+          # --newer-mtime只抓marker后改动的档，sysroot新增量很小，delta不会变太大。
+          echo "打包delta(marker之后改动的install_pkg/.stamps/toolchain-sysroot)..."
           if ! tar -I 'zstd -T0 -3' --newer-mtime="@$(stat -c %Y "$MARKER")" \
                -cf "$DELTA" -C "$BUILD_DIR" install_pkg .stamps toolchain; then
-            echo "打包delta失敗"; rm -f "$DELTA"; exit 1
+            echo "打包delta失败"; rm -f "$DELTA"; exit 1
           fi
           ls -lh "$DELTA"
-          zstd -t "$DELTA" || { echo "delta自檢損壞，不上傳"; rm -f "$DELTA"; exit 1; }
+          zstd -t "$DELTA" || { echo "delta自检损坏，不上传"; rm -f "$DELTA"; exit 1; }
           rm -f "$DELTA".part*
           split -b 1900M -d -a 2 "$DELTA" "$DELTA.part"
           rm -f "$DELTA"
@@ -187,17 +187,17 @@ jobs:
           RELEASE_TAG="build-cores-delta-${{ needs.prepare.outputs.model }}"
           gh release view "${RELEASE_TAG}" --repo ${{ github.repository }} >/dev/null 2>&1 || \
             gh release create "${RELEASE_TAG}" --repo ${{ github.repository }} --prerelease \
-              --title "平行核心delta(自動，${{ needs.prepare.outputs.model }})" \
-              --notes "各平行組編出的核心增量(切塊)，供merge疊加回base，非可安裝韌體。"
-          # 先刪掉本chunk舊的delta分塊，避免上輪殘留污染
+              --title "平行核心delta(自动，${{ needs.prepare.outputs.model }})" \
+              --notes "各平行组编出的核心增量(切块)，供merge叠加回base，非可安装韧体。"
+          # 先删掉本chunk旧的delta分块，避免上轮残留污染
           for a in $(gh release view "${RELEASE_TAG}" --repo ${{ github.repository }} --json assets -q '.assets[].name' 2>/dev/null); do
             case "$a" in delta-${{ matrix.chunk }}.tar.zst.part*) gh release delete-asset "${RELEASE_TAG}" "$a" --repo ${{ github.repository }} --yes || true;; esac
           done
           for p in "${{ github.workspace }}"/delta-${{ matrix.chunk }}.tar.zst.part*; do
-            echo "上傳 $(basename "$p")"
+            echo "上传 $(basename "$p")"
             gh release upload "${RELEASE_TAG}" "$p" --repo ${{ github.repository }} --clobber
           done
-          # 一併上傳本組編不過的核心清單，供彙整判斷是個別壞掉還是系統性問題
+          # 一并上传本组编不过的核心清单，供汇整判断是个别坏掉还是系统性问题
           FL="${{ github.workspace }}/failed-${{ matrix.chunk }}.txt"
           [ -f "$FL" ] && gh release upload "${RELEASE_TAG}" "$FL" --repo ${{ github.repository }} --clobber || true
 
@@ -232,37 +232,37 @@ jobs:
           gh release download "${RELEASE_TAG}" -p 'state.tar.zst.part*' -D "${STATE_DIR}" --repo ${{ github.repository }}
           cat "${STATE_DIR}"/state.tar.zst.part* > "${STATE_FILE}"
           rm -rf "${STATE_DIR}"
-          zstd -t "${STATE_FILE}" || { echo "base損壞"; exit 1; }
+          zstd -t "${STATE_FILE}" || { echo "base损坏"; exit 1; }
           tar -I zstd -xf "${STATE_FILE}" -C "${{ github.workspace }}"
           rm -f "${STATE_FILE}"
-          echo "base還原完成"
+          echo "base还原完成"
 
       - name: Apply all chunk deltas onto base
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           BUILD_DIR=$(ls -d build.*/ 2>/dev/null | head -1)
-          [ -z "$BUILD_DIR" ] && { echo "無base資料夾"; exit 1; }
+          [ -z "$BUILD_DIR" ] && { echo "无base资料夹"; exit 1; }
           RELEASE_TAG="build-cores-delta-${{ needs.prepare.outputs.model }}"
           DDIR="${{ github.workspace }}/_deltas"
           mkdir -p "$DDIR"
           for c in 0 1 2 3 4 5 6 7; do
-            echo "=== 取回並疊加 chunk $c 的delta ==="
+            echo "=== 取回并叠加 chunk $c 的delta ==="
             rm -f "$DDIR"/*
             if gh release download "${RELEASE_TAG}" -p "delta-$c.tar.zst.part*" -D "$DDIR" --repo ${{ github.repository }} 2>/dev/null && ls "$DDIR"/delta-$c.tar.zst.part* >/dev/null 2>&1; then
               cat "$DDIR"/delta-$c.tar.zst.part* > "$DDIR/delta-$c.tar.zst"
               if zstd -t "$DDIR/delta-$c.tar.zst" 2>/dev/null; then
                 tar -I zstd -xf "$DDIR/delta-$c.tar.zst" -C "$BUILD_DIR"
-                echo "chunk $c 疊加完成"
+                echo "chunk $c 叠加完成"
               else
-                echo "!!! chunk $c 的delta損壞，跳過(該組核心會由後續主workflow補編)"
+                echo "!!! chunk $c 的delta损坏，跳过(该组核心会由后续主workflow补编)"
               fi
               rm -f "$DDIR"/*
             else
-              echo "!!! chunk $c 沒有delta(可能該組失敗)，跳過"
+              echo "!!! chunk $c 没有delta(可能该组失败)，跳过"
             fi
           done
-          echo "疊加後install_pkg/.stamps規模："
+          echo "叠加后install_pkg/.stamps规模："
           du -sh "$BUILD_DIR"install_pkg "$BUILD_DIR".stamps
 
       - name: Repackage enriched base and overwrite Release
@@ -277,10 +277,10 @@ jobs:
           df -h "${{ github.workspace }}"
           if ! tar -I 'zstd -T0 -3' -cf "${STATE_FILE}" \
                "${BUILD_DIR}toolchain" "${BUILD_DIR}install_pkg" "${BUILD_DIR}.stamps"; then
-            echo "打包失敗"; rm -f "$STATE_FILE"; exit 1
+            echo "打包失败"; rm -f "$STATE_FILE"; exit 1
           fi
           ls -lh "$STATE_FILE"
-          zstd -t "$STATE_FILE" || { echo "自檢損壞"; rm -f "$STATE_FILE"; exit 1; }
+          zstd -t "$STATE_FILE" || { echo "自检损坏"; rm -f "$STATE_FILE"; exit 1; }
           rm -f "$STATE_FILE".part*
           split -b 1900M -d -a 2 "$STATE_FILE" "$STATE_FILE.part"
           rm -f "$STATE_FILE"
@@ -290,7 +290,7 @@ jobs:
             case "$a" in state.tar.zst*) gh release delete-asset "${RELEASE_TAG}" "$a" --repo ${{ github.repository }} --yes || true;; esac
           done
           for p in "${{ github.workspace }}"/state.tar.zst.part*; do
-            echo "上傳 $(basename "$p")"
+            echo "上传 $(basename "$p")"
             gh release upload "${RELEASE_TAG}" "$p" --repo ${{ github.repository }} --clobber
           done
-          echo "已把含全部核心的base寫回build-state-${{ needs.prepare.outputs.model }}。接著再跑一次主workflow即可完成剩餘套件+組裝映像。"
+          echo "已把含全部核心的base写回build-state-${{ needs.prepare.outputs.model }}。接著再跑一次主workflow即可完成剩余套件+组装映像。"

@@ -49,24 +49,24 @@ jobs:
           JSON=$(printf '%s\n' $MODELS | jq -R . | jq -s -c .)
           echo "matrix=$JSON" >> "$GITHUB_OUTPUT"
           echo "Models to build: $MODELS"
-      # NOTE(w2xg2022): 「代碼沒變就不編」閘門。手動觸發(workflow_dispatch)一律建置；
-      # 只有排程(schedule)觸發時，才比對現在的commit跟上次成功建置記錄的commit
-      # (存在built-commit這個Release的body)。一樣就整輪skip，省掉沒必要的月度重建。
+      # NOTE(w2xg2022): 「代码没变就不编」闸门。手动触发(workflow_dispatch)一律建置；
+      # 只有排程(schedule)触发时，才比对现在的commit跟上次成功建置记录的commit
+      # (存在built-commit这个Release的body)。一样就整轮skip，省掉没必要的月度重建。
       - id: gate
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ "${{ github.event_name }}" != "schedule" ]; then
-            echo "手動觸發，一律建置"
+            echo "手动触发，一律建置"
             echo "needed=yes" >> "$GITHUB_OUTPUT"; exit 0
           fi
           LAST=$(gh release view built-commit --repo ${{ github.repository }} --json body -q .body 2>/dev/null | tr -d '[:space:]')
           NOW="${{ github.sha }}"
           if [ -n "$LAST" ] && [ "$LAST" = "$NOW" ]; then
-            echo "代碼自上次成功建置以來未變($NOW)，跳過本次月度重建"
+            echo "代码自上次成功建置以来未变($NOW)，跳过本次月度重建"
             echo "needed=no" >> "$GITHUB_OUTPUT"
           else
-            echo "代碼有變(上次:${LAST:-無} 現在:$NOW)，執行建置"
+            echo "代码有变(上次:${LAST:-无} 现在:$NOW)，执行建置"
             echo "needed=yes" >> "$GITHUB_OUTPUT"
           fi
 
@@ -78,10 +78,10 @@ jobs:
     # 绑死VM的glibc+CPU)已放弃；且24.04的系统autotools较新会让libtool的autoreconf挂
     # (cannot open libltdl/ltdl.mk)。故回22.04。
     runs-on: ubuntu-22.04
-    # NOTE(w2xg2022): GitHub代管runner有硬性6小時(360分鐘)執行上限，timeout-minutes
-    # 設更高也沒用，runner基礎設施會強制中止。實測跑到350分鐘進度497/639且過程中
-    # 完全沒有錯誤(純粹被逾時砍掉)，代表之前修的所有上游來源/編譯問題都真的解決了，
-    # 剩下的是單純"時間不夠"，靠下面新增的ccache跨次建置快取來解，不是硬幹拉長時間。
+    # NOTE(w2xg2022): GitHub代管runner有硬性6小时(360分钟)执行上限，timeout-minutes
+    # 设更高也没用，runner基础设施会强制中止。实测跑到350分钟进度497/639且过程中
+    # 完全没有错误(纯粹被逾时砍掉)，代表之前修的所有上游来源/编译问题都真的解决了，
+    # 剩下的是单纯"时间不够"，靠下面新增的ccache跨次建置快取来解，不是硬干拉长时间。
     timeout-minutes: 360
     strategy:
       fail-fast: false
@@ -91,10 +91,10 @@ jobs:
       - name: Maximize build space
         uses: easimon/maximize-build-space@v10
         with:
-          # NOTE(w2xg2022): root-reserve-mb太小(1024)，建置跑超過2小時後根目錄(/tmp、
-          # runner自己的診斷log等雜項寫入)會慢慢塞滿，最終連runner本身都掛掉(No space
-          # left on device寫進runner自己的trace log)。調大給更多餘裕。
-          # 8192仍然不夠(2小時後_diag/Worker_*.log累積太大)，調到16384。
+          # NOTE(w2xg2022): root-reserve-mb太小(1024)，建置跑超过2小时后根目录(/tmp、
+          # runner自己的诊断log等杂项写入)会慢慢塞满，最终连runner本身都挂掉(No space
+          # left on device写进runner自己的trace log)。调大给更多余裕。
+          # 8192仍然不够(2小时后_diag/Worker_*.log累积太大)，调到16384。
           root-reserve-mb: 16384
           swap-size-mb: 512
           remove-dotnet: 'true'
@@ -116,8 +116,8 @@ jobs:
       # 清单来管理，绕过了build系统自己的PKG_DEPENDS_TARGET依赖图，一旦清单漏列
       # 或核心被意外重编、驱动模块没跟着重编，就会vermagic对不上(表现为卡开机)。
       # 改成把这批包整组当一个「原子kernel bundle」：用它们的package.mk+patches
-      # 内容雜湊当版本键，雜湊不变=直接整组复用，雜湊一变=整组一起重编，绝不会
-      # 只重编其中一部分。此步骤只算雜湊，不碰任何文件。
+      # 内容杂凑当版本键，杂凑不变=直接整组复用，杂凑一变=整组一起重编，绝不会
+      # 只重编其中一部分。此步骤只算杂凑，不碰任何文件。
       - name: Compute kernel bundle hash
         run: |
           KERNEL_PKGS="linux gpu-aml media_modules-aml aic8800-sdio ap6xxx-aml mt76 mt7668-wifi-bt RTL8189FS RTL8723DS-aml RTL8851BU RTL8852BE-aml RTL8852BS-aml RTW88 w1-aml wifi_dummy-aml"
@@ -130,47 +130,47 @@ jobs:
           done
           KERNEL_HASH=$(echo "$HASH_INPUT" | sha256sum | cut -c1-16)
           echo "KERNEL_HASH=$KERNEL_HASH" >> "$GITHUB_ENV"
-          echo "本次kernel lane内容雜湊：$KERNEL_HASH（由linux+14个耦合驱动包的package.mk+patches内容决定）"
+          echo "本次kernel lane内容杂凑：$KERNEL_HASH（由linux+14个耦合驱动包的package.mk+patches内容决定）"
 
-      # NOTE(w2xg2022): 之前用actions/cache存sources/ccache，但GitHub的6小時硬上限
-      # 是暴力砍斷整個job，來不及跑cache的儲存(post)步驟，導致快取永遠存不進去，
-      # 每次都從零開始編到差不多同一個進度又被砍，等於白做。改用GitHub Release
-      # 當作「建置接力狀態」的存放點：把工具鏈+已裝好的套件+進度標記(.stamps)
-      # 打包成一個檔案存進Release，不受6小時job生命週期限制，下一輪開工前先
-      # 還原回來，讓建置系統(靠.stamps判斷哪些套件已經裝好)自動接著編，不用
-      # 重頭來過。真正確保「存檔」這步會執行，Build步驟本身會在時間快到前
-      # 自己主動停下來(見下面的timeout設計)，而不是被GitHub暴力砍斷。
+      # NOTE(w2xg2022): 之前用actions/cache存sources/ccache，但GitHub的6小时硬上限
+      # 是暴力砍断整个job，来不及跑cache的储存(post)步骤，导致快取永远存不进去，
+      # 每次都从零开始编到差不多同一个进度又被砍，等于白做。改用GitHub Release
+      # 当作「建置接力状态」的存放点：把工具链+已装好的套件+进度标记(.stamps)
+      # 打包成一个档案存进Release，不受6小时job生命周期限制，下一轮开工前先
+      # 还原回来，让建置系统(靠.stamps判断哪些套件已经装好)自动接著编，不用
+      # 重头来过。真正确保「存档」这步会执行，Build步骤本身会在时间快到前
+      # 自己主动停下来(见下面的timeout设计)，而不是被GitHub暴力砍断。
       - name: Restore build checkpoint from Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           RELEASE_TAG="build-state-${{ matrix.model }}"
-          # NOTE(w2xg2022): 接力狀態被切成多塊(state.tar.zst.partNN，各<2GiB繞開
-          # GitHub單一asset上限)。下載全部分塊到大容量分區(不能放/tmp小分區)，
-          # 照順序cat拼回完整檔再驗證。
+          # NOTE(w2xg2022): 接力状态被切成多块(state.tar.zst.partNN，各<2GiB绕开
+          # GitHub单一asset上限)。下载全部分块到大容量分区(不能放/tmp小分区)，
+          # 照顺序cat拼回完整档再验证。
           STATE_FILE="${{ github.workspace }}/state.tar.zst"
           STATE_DIR="${{ github.workspace }}/_state_parts"
           mkdir -p "${STATE_DIR}"
           if gh release download "${RELEASE_TAG}" -p 'state.tar.zst.part*' -D "${STATE_DIR}" --repo ${{ github.repository }} 2>/dev/null && ls "${STATE_DIR}"/state.tar.zst.part* >/dev/null 2>&1; then
-            echo "找到上一輪的接力狀態分塊，拼回中..."
+            echo "找到上一轮的接力状态分块，拼回中..."
             ls -lh "${STATE_DIR}"/state.tar.zst.part*
             cat "${STATE_DIR}"/state.tar.zst.part* > "${STATE_FILE}"
             rm -rf "${STATE_DIR}"
             ls -lh "${STATE_FILE}"
-            # 拼回後先用zstd -t驗證完整性，損壞(存檔曾被砍/分塊缺失)就丟棄從零開始，
-            # 絕不能拿半殘的狀態去接續(.stamps會誤判某些套件已裝好但檔案其實不完整)。
+            # 拼回后先用zstd -t验证完整性，损坏(存档曾被砍/分块缺失)就丢弃从零开始，
+            # 绝不能拿半残的状态去接续(.stamps会误判某些套件已装好但档案其实不完整)。
             if zstd -t "${STATE_FILE}" 2>/dev/null; then
-              echo "完整性OK，還原中..."
+              echo "完整性OK，还原中..."
               tar -I zstd -xf "${STATE_FILE}" -C "${{ github.workspace }}"
               rm -f "${STATE_FILE}"
-              echo "還原完成："
+              echo "还原完成："
               du -sh build.*/toolchain build.*/install_pkg build.*/.stamps 2>/dev/null
-              # NOTE(w2xg2022): glibc/icu在「安裝階段」會回頭引用自己的build目錄
+              # NOTE(w2xg2022): glibc/icu在「安装阶段」会回头引用自己的build目录
               # (glibc: emuelec-emulationstation取charmaps/localedef; icu: --with-cross-build
-              # 要host build目錄)。checkpoint為省空間剝掉了build/，若還原的舊checkpoint
-              # 沒帶這兩個的build目錄，就清掉它們的.stamps強制重編一次(重編會重新產生
-              # build目錄)。之後的存檔會保留這兩個build目錄(見save步驟)，所以只有第一次
-              # 用舊checkpoint時會重編。
+              # 要host build目录)。checkpoint为省空间剥掉了build/，若还原的旧checkpoint
+              # 没带这两个的build目录，就清掉它们的.stamps强制重编一次(重编会重新产生
+              # build目录)。之后的存档会保留这两个build目录(见save步骤)，所以只有第一次
+              # 用旧checkpoint时会重编。
               BD=$(ls -d build.*/ 2>/dev/null | head -1)
               # NOTE(w2xg2022): 这些套件的build目录会在「安装阶段」被别的套件用
               # get_build_dir引用(glibc:ES取charmaps; icu:自己--with-cross-build;
@@ -178,29 +178,29 @@ jobs:
               # 这类套件在checkpoint里(有stamp)但缺build目录，清其stamp强制重编一次
               # 重新产生build目录。build目录还在的(如save保留的glibc/icu)不动。发现
               # 一个补一个进这个清单。
-              # NOTE(w2xg2022): linux已移出這份清單——kernel(及其耦合驅動模組)現在由
-              # 下面獨立的「Restore kernel bundle」步驟原子化接管，不再靠這裡的手寫
-              # 清單個別補救，避免重蹈「核心被強制重編、驅動模組沒跟著重編」的覆轍。
+              # NOTE(w2xg2022): linux已移出这份清单——kernel(及其耦合驱动模组)现在由
+              # 下面独立的「Restore kernel bundle」步骤原子化接管，不再靠这里的手写
+              # 清单个别补救，避免重蹈「核心被强制重编、驱动模组没跟著重编」的覆辙。
               for p in glibc icu libpcap capsimg gl4es enet zmusic math_neon cyclone68000 sdlgamecontrollerdb libdrm libepoxy libevdev go rust cargo-snapshot rustc-snapshot rust-std-snapshot opengl-meson; do
                 if [ -d "${BD}.stamps/${p}" ] && ! ls -d "${BD}build/${p}-"* >/dev/null 2>&1; then
-                  echo "checkpoint有${p} stamp但缺build目錄，清stamp強制重編一次"
+                  echo "checkpoint有${p} stamp但缺build目录，清stamp强制重编一次"
                   rm -rf "${BD}.stamps/${p}"
                 fi
               done
             else
-              echo "接力狀態拼回後損壞，丟棄，從零開始建置"
+              echo "接力状态拼回后损坏，丢弃，从零开始建置"
               rm -f "${STATE_FILE}"
               rm -rf build.*/
             fi
           else
-            echo "沒有找到之前的接力狀態，從零開始建置"
+            echo "没有找到之前的接力状态，从零开始建置"
             rm -rf "${STATE_DIR}"
           fi
 
-      # NOTE(w2xg2022): 在通用checkpoint還原「之後」執行，確保kernel bundle的
-      # .stamps/install_pkg一定是最終覆蓋、最終生效的版本——就算通用checkpoint
-      # 裡殘留舊的、不成套的kernel相關內容，這步驟也會用「整組雜湊比對過」的
-      # 原子bundle蓋過去，永遠不會出現部分新、部分舊的錯位組合。
+      # NOTE(w2xg2022): 在通用checkpoint还原「之后」执行，确保kernel bundle的
+      # .stamps/install_pkg一定是最终覆盖、最终生效的版本——就算通用checkpoint
+      # 里残留旧的、不成套的kernel相关内容，这步骤也会用「整组杂凑比对过」的
+      # 原子bundle盖过去，永远不会出现部分新、部分旧的错位组合。
       - name: Restore kernel bundle from Release (atomic kernel+driver set)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -208,33 +208,33 @@ jobs:
           RELEASE_TAG="kernel-state-${{ matrix.model }}-${KERNEL_HASH}"
           BD=$(ls -d build.*/ 2>/dev/null | head -1)
           if [ -z "$BD" ]; then
-            echo "尚無build目錄(全新建置)，kernel bundle將在本輪build完後產生並快取"
+            echo "尚无build目录(全新建置)，kernel bundle将在本轮build完后产生并快取"
             exit 0
           fi
           KSTATE="${{ github.workspace }}/kstate.tar.zst"
           if gh release download "${RELEASE_TAG}" -p 'kstate.tar.zst' -O "${KSTATE}" --repo ${{ github.repository }} 2>/dev/null; then
-            echo "找到雜湊相符的kernel bundle(${KERNEL_HASH})，還原中(整組原子覆蓋，確保核心與驅動模組永遠同批)..."
+            echo "找到杂凑相符的kernel bundle(${KERNEL_HASH})，还原中(整组原子覆盖，确保核心与驱动模组永远同批)..."
             if zstd -t "${KSTATE}" 2>/dev/null; then
               tar -I zstd -xf "${KSTATE}" -C "${BD}"
               rm -f "${KSTATE}"
-              echo "kernel bundle還原完成，本輪跳過重編linux及其耦合驅動包"
+              echo "kernel bundle还原完成，本轮跳过重编linux及其耦合驱动包"
             else
-              echo "kernel bundle損壞，丟棄，本輪將重編整組kernel lane"
+              echo "kernel bundle损坏，丢弃，本轮将重编整组kernel lane"
               rm -f "${KSTATE}"
             fi
           else
-            echo "沒有雜湊${KERNEL_HASH}對應的kernel bundle(首次建置或kernel/驅動有改動)，本輪將重編整組kernel lane"
+            echo "没有杂凑${KERNEL_HASH}对应的kernel bundle(首次建置或kernel/驱动有改动)，本轮将重编整组kernel lane"
           fi
 
       - name: Install build dependencies
         run: |
-          # NOTE(w2xg2022): GitHub官方runner映像檔預裝了packages.microsoft.com
-          # (azure-cli/microsoft-prod)的apt來源，我們的建置完全用不到Azure CLI，
-          # 但這兩個來源偶爾會回403，apt-get update預設對任一來源失敗都回傳
-          # 非零結束碼，搭配GitHub Actions的run:預設bash -e，整個step會在這裡
-          # 直接中止(實測確認：ubuntu本身的套件列表都正常抓到，只有微軟這兩個
-          # 來源出問題)。跟我們自己的原始碼完全無關，建置前先移除這兩個用不到
-          # 的來源清單，避免apt-get update被它們拖垮。
+          # NOTE(w2xg2022): GitHub官方runner映像档预装了packages.microsoft.com
+          # (azure-cli/microsoft-prod)的apt来源，我们的建置完全用不到Azure CLI，
+          # 但这两个来源偶尔会回403，apt-get update预设对任一来源失败都回传
+          # 非零结束码，搭配GitHub Actions的run:预设bash -e，整个step会在这里
+          # 直接中止(实测确认：ubuntu本身的套件列表都正常抓到，只有微软这两个
+          # 来源出问题)。跟我们自己的原始码完全无关，建置前先移除这两个用不到
+          # 的来源清单，避免apt-get update被它们拖垮。
           sudo grep -rl 'packages.microsoft.com' /etc/apt/sources.list.d/ 2>/dev/null | xargs -r sudo rm -f
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -249,18 +249,18 @@ jobs:
 
       - name: Build (${{ matrix.model }})
         run: |
-          # NOTE(w2xg2022): /tmp掛在根目錄那個小分區(maximize-build-space沒擴充它，
-          # 開局就只剩~100MB)，gcc預設把組譯暫存檔(.s等)寫到/tmp，kernel編譯量大時
-          # 會把/tmp塞爆導致"No space left on device"，跟GITHUB_WORKSPACE大容量分區
-          # 是否還有空間完全無關。改把TMPDIR指到大容量分區下的目錄。
-          # root-reserve-mb從1024調到8192後仍在2小時後爆掉(runner自己的_diag log寫不進去)，
-          # 懷疑是某些host端工具(pip/npm/go等)預設快取寫進$HOME(也在根目錄小分區)累積出來的，
-          # 連HOME一起搬到大容量分區，徹底排除根目錄小分區的依賴。
+          # NOTE(w2xg2022): /tmp挂在根目录那个小分区(maximize-build-space没扩充它，
+          # 开局就只剩~100MB)，gcc预设把组译暂存档(.s等)写到/tmp，kernel编译量大时
+          # 会把/tmp塞爆导致"No space left on device"，跟GITHUB_WORKSPACE大容量分区
+          # 是否还有空间完全无关。改把TMPDIR指到大容量分区下的目录。
+          # root-reserve-mb从1024调到8192后仍在2小时后爆掉(runner自己的_diag log写不进去)，
+          # 怀疑是某些host端工具(pip/npm/go等)预设快取写进$HOME(也在根目录小分区)累积出来的，
+          # 连HOME一起搬到大容量分区，彻底排除根目录小分区的依赖。
           mkdir -p "${{ github.workspace }}/.tmp" "${{ github.workspace }}/.home"
           export TMPDIR="${{ github.workspace }}/.tmp"
           export HOME="${{ github.workspace }}/.home"
 
-          # NOTE(w2xg2022): ★initramfs自癒★——若某initramfs相关包已标记完成(stamp在)但
+          # NOTE(w2xg2022): ★initramfs自愈★——若某initramfs相关包已标记完成(stamp在)但
           # build/目录缺失(从旧checkpoint还原、或被裁掉),make image的(init)安装会从缺失的
           # $PKG_BUILD复制到0文件→initramfs打包成空(195B ramdisk)→固件卡开机。这里检测并
           # 清掉这些包的stamp强制重编(重建build/),保证initramfs能正确组出。有build/的不动
@@ -270,7 +270,7 @@ jobs:
           if [ -n "$BD_FIX" ]; then
             for p in busybox gcc util-linux e2fsprogs dosfstools splash-image terminus-font bkeymaps initramfs; do
               if ls "${BD_FIX}.stamps/${p}/"* >/dev/null 2>&1 && ! ls -d "${BD_FIX}build/${p}-"* >/dev/null 2>&1; then
-                echo "[initramfs自癒] ${p}: build/缺失但已标记完成 → 清stamp强制重编"
+                echo "[initramfs自愈] ${p}: build/缺失但已标记完成 → 清stamp强制重编"
                 rm -rf "${BD_FIX}.stamps/${p}"
               fi
             done
@@ -320,18 +320,18 @@ jobs:
           ) > build-${{ matrix.model }}.log 2>&1 &
           BUILD_PID=$!
 
-          # NOTE(w2xg2022): GitHub的6小時硬上限會暴力砍斷整個job，來不及執行
-          # 後面「打包存檔」的步驟。第一版設5小時40分，結果「開場準備(約15分)
-          # +建置(5h40m)+存檔上傳(11GB要打包+上傳約20-30分)」加起來超過6小時，
-          # 存檔被硬牆砍到一半、上傳出殘缺檔。改成建置只跑5小時整就主動停，
-          # 留足足一小時給開場準備+存檔上傳，確保接力狀態能完整存進Release。
+          # NOTE(w2xg2022): GitHub的6小时硬上限会暴力砍断整个job，来不及执行
+          # 后面「打包存档」的步骤。第一版设5小时40分，结果「开场准备(约15分)
+          # +建置(5h40m)+存档上传(11GB要打包+上传约20-30分)」加起来超过6小时，
+          # 存档被硬墙砍到一半、上传出残缺档。改成建置只跑5小时整就主动停，
+          # 留足足一小时给开场准备+存档上传，确保接力状态能完整存进Release。
           MAX_BUILD_SECONDS=18000
           START_TS=$(date +%s)
 
-          # 背景磁碟監控：可用空間<8GB時，自動清理已完成套件的build/原始編譯目錄
-          # (保留install_pkg/成果，已驗證安全，最終映像組裝讀install_pkg不是build/)
-          # NOTE(w2xg2022): maximize-build-space把大容量磁碟掛在GITHUB_WORKSPACE(這裡的CWD)，
-          # 不是掛在根目錄"/"！根目錄本來就幾乎全滿跟建置無關，之前一直查"/"等於監控完全失效。
+          # 背景磁碟监控：可用空间<8GB时，自动清理已完成套件的build/原始编译目录
+          # (保留install_pkg/成果，已验证安全，最终映像组装读install_pkg不是build/)
+          # NOTE(w2xg2022): maximize-build-space把大容量磁碟挂在GITHUB_WORKSPACE(这里的CWD)，
+          # 不是挂在根目录"/"！根目录本来就几乎全满跟建置无关，之前一直查"/"等于监控完全失效。
           while kill -0 $BUILD_PID 2>/dev/null; do
             sleep 60
             BUILD_DIR=$(ls -d build.*/ 2>/dev/null | head -1)
@@ -342,9 +342,9 @@ jobs:
               echo "[monitor] disk low, cleaning completed packages' build/ dirs..."
               CLEANED=0
               for d in $(ls "${BUILD_DIR}install_pkg" 2>/dev/null); do
-                # NOTE(w2xg2022): glibc/icu的build目錄在後面套件的安裝階段還會被引用
+                # NOTE(w2xg2022): glibc/icu的build目录在后面套件的安装阶段还会被引用
                 # (glibc: ES取charmaps/localedef; icu: --with-cross-build)，不能清，
-                # 否則ES/icu-dependent套件安裝時找不到build目錄而失敗。
+                # 否则ES/icu-dependent套件安装时找不到build目录而失败。
                 # NOTE(w2xg2022): linux不再需要在这里特殊保留——kernel bundle只快取
                 # .stamps+install_pkg，不需要build/linux-*，可以像一般套件一样清理。
                 # NOTE(w2xg2022): ★initramfs相关包的build/绝不能清★——make image的
@@ -362,7 +362,7 @@ jobs:
               df -h .
             fi
             if [ "$ELAPSED" -ge "$MAX_BUILD_SECONDS" ]; then
-              echo "[monitor] 時間快到6小時上限，主動停止建置以保留接力狀態..."
+              echo "[monitor] 时间快到6小时上限，主动停止建置以保留接力状态..."
               kill -TERM $BUILD_PID 2>/dev/null
               sleep 15
               kill -KILL $BUILD_PID 2>/dev/null
@@ -378,10 +378,10 @@ jobs:
         continue-on-error: true
         id: build_step
 
-      # NOTE(w2xg2022): 只有linux+14個耦合驅動包「全部」都有安裝完成標記(整組真正
-      # 编完，不是编到一半)才快取，且用內容雜湊當Release tag，同雜湊已存在就不重複
-      # 上傳。這樣kernel bundle永遠是「整組一起成功」的原子快照，之後只要源碼沒動
-      # 這批包，任何一輪建置都能直接複用、完全跳過重編。
+      # NOTE(w2xg2022): 只有linux+14个耦合驱动包「全部」都有安装完成标记(整组真正
+      # 编完，不是编到一半)才快取，且用内容杂凑当Release tag，同杂凑已存在就不重复
+      # 上传。这样kernel bundle永远是「整组一起成功」的原子快照，之后只要源码没动
+      # 这批包，任何一轮建置都能直接复用、完全跳过重编。
       - name: Save kernel bundle to Release (atomic kernel+driver set)
         if: always()
         continue-on-error: true
@@ -390,10 +390,10 @@ jobs:
         run: |
           KERNEL_PKGS="linux gpu-aml media_modules-aml aic8800-sdio ap6xxx-aml mt76 mt7668-wifi-bt RTL8189FS RTL8723DS-aml RTL8851BU RTL8852BE-aml RTL8852BS-aml RTW88 w1-aml wifi_dummy-aml"
           BD=$(ls -d build.*/ 2>/dev/null | head -1)
-          if [ -z "$BD" ]; then echo "無build目錄，跳過"; exit 0; fi
+          if [ -z "$BD" ]; then echo "无build目录，跳过"; exit 0; fi
           MISSING=0
           for p in $KERNEL_PKGS; do
-            [ -d "${BD}.stamps/${p}" ] || { echo "缺 ${p} 的安裝完成標記，kernel lane本輪未整組編完，不快取"; MISSING=1; }
+            [ -d "${BD}.stamps/${p}" ] || { echo "缺 ${p} 的安装完成标记，kernel lane本轮未整组编完，不快取"; MISSING=1; }
           done
           if [ "$MISSING" = "1" ]; then exit 0; fi
           RELEASE_TAG="kernel-state-${{ matrix.model }}-${KERNEL_HASH}"
@@ -405,7 +405,7 @@ jobs:
               gh release delete "${RELEASE_TAG}" --repo ${{ github.repository }} --yes --cleanup-tag 2>/dev/null || true
               sleep 3
             else
-              echo "雜湊${KERNEL_HASH}的kernel bundle已存在，無需重複上傳"
+              echo "杂凑${KERNEL_HASH}的kernel bundle已存在，无需重复上传"
               exit 0
             fi
           fi
@@ -417,19 +417,19 @@ jobs:
             for d in "${BD}install_pkg/${p}-"*; do [ -d "$d" ] && INSTALL_PATHS="$INSTALL_PATHS install_pkg/$(basename "$d")"; done
           done
           tar -I 'zstd -T0 -3' -cf "${KSTATE}" -C "${BD}" ${STAMP_PATHS} ${INSTALL_PATHS}
-          zstd -t "${KSTATE}" || { echo "kernel bundle自檢損壞，不上傳"; rm -f "${KSTATE}"; exit 1; }
+          zstd -t "${KSTATE}" || { echo "kernel bundle自检损坏，不上传"; rm -f "${KSTATE}"; exit 1; }
           ls -lh "${KSTATE}"
           gh release create "${RELEASE_TAG}" --repo ${{ github.repository }} --prerelease \
-            --title "Kernel Bundle(自動，${{ matrix.model }}，hash ${KERNEL_HASH})" \
-            --notes "linux內核+耦合驅動模組(gpu-aml/media_modules-aml/wifi-bt等)的原子化快取，按package.mk+patches內容雜湊(${KERNEL_HASH})鎖版本。雜湊不變代表這些包源碼未變，可直接複用，永不單獨重編其中一部分。" \
+            --title "Kernel Bundle(自动，${{ matrix.model }}，hash ${KERNEL_HASH})" \
+            --notes "linux内核+耦合驱动模组(gpu-aml/media_modules-aml/wifi-bt等)的原子化快取，按package.mk+patches内容杂凑(${KERNEL_HASH})锁版本。杂凑不变代表这些包源码未变，可直接复用，永不单独重编其中一部分。" \
             "${KSTATE}"
           rm -f "${KSTATE}"
           echo "kernel bundle已快取(hash=${KERNEL_HASH})"
 
       - name: Save build checkpoint to Release (always)
         if: always()
-        # NOTE(w2xg2022): 存checkpoint失敗(空間不足等)不該擋掉后面的韌體上傳。
-        # continue-on-error讓Save失敗时job仍算成功、繼續跑Collect/Upload firmware，
+        # NOTE(w2xg2022): 存checkpoint失败(空间不足等)不该挡掉后面的韧体上传。
+        # continue-on-error让Save失败时job仍算成功、继续跑Collect/Upload firmware，
         # 确保build成功产出的.img一定会被上传。
         continue-on-error: true
         env:
@@ -438,23 +438,23 @@ jobs:
           set -o pipefail
           BUILD_DIR=$(ls -d build.*/ 2>/dev/null | head -1)
           if [ -z "$BUILD_DIR" ]; then
-            echo "找不到建置資料夾，跳過存檔"
+            echo "找不到建置资料夹，跳过存档"
             exit 0
           fi
-          # NOTE(w2xg2022): 前兩輪存檔都產出殘缺的~47MB檔，真兇是把11GB打包寫到
-          # /tmp(在runner的小分區)，寫到47MB就把小分區塞爆、tar失敗，但原本結尾
-          # 接了「| tail」讓管線結束碼變成tail的(永遠成功)，把tar的失敗整個蓋掉、
-          # 誤報success。改成：(1)寫到大容量分區(workspace，跟52GB建置目錄同一顆)；
-          # (2)set -o pipefail + 明確檢查tar結束碼，tar真的失敗就讓步驟報錯，不再
-          # 上傳殘檔污染下一輪。
+          # NOTE(w2xg2022): 前两轮存档都产出残缺的~47MB档，真凶是把11GB打包写到
+          # /tmp(在runner的小分区)，写到47MB就把小分区塞爆、tar失败，但原本结尾
+          # 接了「| tail」让管线结束码变成tail的(永远成功)，把tar的失败整个盖掉、
+          # 误报success。改成：(1)写到大容量分区(workspace，跟52GB建置目录同一颗)；
+          # (2)set -o pipefail + 明确检查tar结束码，tar真的失败就让步骤报错，不再
+          # 上传残档污染下一轮。
           STATE_FILE="${{ github.workspace }}/state.tar.zst"
-          # 打包前清掉build/(各套件編譯暫存工作目錄，很肥)以騰出空間；但保留glibc/icu
-          # 的build目錄——它們在後面套件的安裝階段還會被引用(glibc:ES取charmaps/localedef;
-          # icu:--with-cross-build)，剝掉會讓還原後的組裝失敗。保留這兩個後，把它們也
-          # 一併打包進checkpoint，下一輪還原就直接有、不用重編。
-          echo "清理build/暫存工作目錄(保留glibc/icu+initramfs相关包)以騰出空間..."
-          # NOTE(w2xg2022): linux不再特殊保留——kernel bundle(獨立的Save步驟)只快取
-          # .stamps+install_pkg，不需要build/linux-*，可以跟一般套件一樣清掉騰空間。
+          # 打包前清掉build/(各套件编译暂存工作目录，很肥)以腾出空间；但保留glibc/icu
+          # 的build目录——它们在后面套件的安装阶段还会被引用(glibc:ES取charmaps/localedef;
+          # icu:--with-cross-build)，剥掉会让还原后的组装失败。保留这两个后，把它们也
+          # 一并打包进checkpoint，下一轮还原就直接有、不用重编。
+          echo "清理build/暂存工作目录(保留glibc/icu+initramfs相关包)以腾出空间..."
+          # NOTE(w2xg2022): linux不再特殊保留——kernel bundle(独立的Save步骤)只快取
+          # .stamps+install_pkg，不需要build/linux-*，可以跟一般套件一样清掉腾空间。
           # NOTE(w2xg2022): ★initramfs相关包的build/必须保留★——make image的initramfs
           # 「(init)安装」pass从$PKG_BUILD(build/)复制文件(busybox/gcc-libgcc/util-linux等
           # 的makeinstall_init),不是读install_pkg。build/被裁→initramfs打包成空(195B
@@ -467,27 +467,27 @@ jobs:
               ! -name 'terminus-font-*' ! -name 'bkeymaps-*' ! -name 'initramfs-*' \
               -exec rm -rf {} + 2>/dev/null || true
           fi
-          # 收集要保留的build目錄(glibc/icu + initramfs相关包，可能不存在，用glob展開)
+          # 收集要保留的build目录(glibc/icu + initramfs相关包，可能不存在，用glob展开)
           KEEP_BUILD=$(ls -d "${BUILD_DIR}build/glibc-"* "${BUILD_DIR}build/icu-"* \
             "${BUILD_DIR}build/busybox-"* "${BUILD_DIR}build/gcc-"* "${BUILD_DIR}build/util-linux-"* \
             "${BUILD_DIR}build/e2fsprogs-"* "${BUILD_DIR}build/dosfstools-"* "${BUILD_DIR}build/splash-image-"* \
             "${BUILD_DIR}build/terminus-font-"* "${BUILD_DIR}build/bkeymaps-"* "${BUILD_DIR}build/initramfs-"* 2>/dev/null)
-          echo "打包接力狀態(工具鏈+已裝套件+進度標記+glibc/icu build)到大容量分區..."
+          echo "打包接力状态(工具链+已装套件+进度标记+glibc/icu build)到大容量分区..."
           df -h "${{ github.workspace }}"
           if ! tar -I 'zstd -T0 -3' -cf "${STATE_FILE}" \
                "${BUILD_DIR}toolchain" "${BUILD_DIR}install_pkg" "${BUILD_DIR}.stamps" ${KEEP_BUILD}; then
-            echo "打包失敗(多半是空間不足)，不上傳殘檔"
+            echo "打包失败(多半是空间不足)，不上传残档"
             rm -f "${STATE_FILE}"
             exit 1
           fi
           ls -lh "${STATE_FILE}"
-          echo "本地二次驗證完整性..."
-          zstd -t "${STATE_FILE}" || { echo "打包出來的檔自檢就損壞，不上傳"; rm -f "${STATE_FILE}"; exit 1; }
-          # NOTE(w2xg2022): GitHub單一Release asset硬上限2GiB，實測2.5GB整包上傳
-          # 直接HTTP 422 Validation Failed。且接力狀態會隨建置進度越來越大，只會
-          # 更超標。改成切成1900MiB(安全低於2GiB)的多塊(state.tar.zst.partNN)分別
-          # 上傳，還原時再照順序cat拼回。上傳前先刪掉Release上所有舊的state分塊，
-          # 避免上一輪殘留的多餘分塊(例如上輪3塊這輪2塊，第3塊沒被覆蓋)污染拼接。
+          echo "本地二次验证完整性..."
+          zstd -t "${STATE_FILE}" || { echo "打包出来的档自检就损坏，不上传"; rm -f "${STATE_FILE}"; exit 1; }
+          # NOTE(w2xg2022): GitHub单一Release asset硬上限2GiB，实测2.5GB整包上传
+          # 直接HTTP 422 Validation Failed。且接力状态会随建置进度越来越大，只会
+          # 更超标。改成切成1900MiB(安全低于2GiB)的多块(state.tar.zst.partNN)分别
+          # 上传，还原时再照顺序cat拼回。上传前先删掉Release上所有旧的state分块，
+          # 避免上一轮残留的多余分块(例如上轮3块这轮2块，第3块没被覆盖)污染拼接。
           rm -f "${STATE_FILE}".part*
           split -b 1900M -d -a 2 "${STATE_FILE}" "${STATE_FILE}.part"
           rm -f "${STATE_FILE}"
@@ -495,20 +495,20 @@ jobs:
           RELEASE_TAG="build-state-${{ matrix.model }}"
           gh release view "${RELEASE_TAG}" --repo ${{ github.repository }} >/dev/null 2>&1 || \
             gh release create "${RELEASE_TAG}" --repo ${{ github.repository }} --prerelease \
-              --title "建置接力狀態(自動，${{ matrix.model }})" \
-              --notes "自動保存的建置中間狀態(切塊)，供下一輪雲編譯接續使用，不是可安裝的韌體。"
+              --title "建置接力状态(自动，${{ matrix.model }})" \
+              --notes "自动保存的建置中间状态(切块)，供下一轮云编译接续使用，不是可安装的韧体。"
           for a in $(gh release view "${RELEASE_TAG}" --repo ${{ github.repository }} --json assets -q '.assets[].name' 2>/dev/null); do
-            case "$a" in state.tar.zst*) echo "刪除舊分塊 $a"; gh release delete-asset "${RELEASE_TAG}" "$a" --repo ${{ github.repository }} --yes || true;; esac
+            case "$a" in state.tar.zst*) echo "删除旧分块 $a"; gh release delete-asset "${RELEASE_TAG}" "$a" --repo ${{ github.repository }} --yes || true;; esac
           done
           for p in "${{ github.workspace }}"/state.tar.zst.part*; do
-            echo "上傳 $(basename "$p") ..."
+            echo "上传 $(basename "$p") ..."
             gh release upload "${RELEASE_TAG}" "$p" --repo ${{ github.repository }} --clobber
           done
 
       - name: Fail job if build did not actually succeed
         if: steps.build_step.outcome != 'success'
         run: |
-          echo "本輪建置未完整跑完(逾時自停或真的失敗)，接力狀態已存檔，等下一輪繼續。"
+          echo "本轮建置未完整跑完(逾时自停或真的失败)，接力状态已存档，等下一轮继续。"
           exit 1
 
       - name: Collect artifacts
@@ -547,8 +547,8 @@ jobs:
             自动云编译：${{ env.PROJECT }}/${{ env.DEVICE }} SUBDEVICE=${{ matrix.model }}
             触发方式：${{ github.event_name }}
 
-      # NOTE(w2xg2022): 只有真的完整編出韌體(success)才記錄本次commit到built-commit
-      # 這個Release的body，供下次schedule觸發時的gate比對「代碼有沒有變」。
+      # NOTE(w2xg2022): 只有真的完整编出韧体(success)才记录本次commit到built-commit
+      # 这个Release的body，供下次schedule触发时的gate比对「代码有没有变」。
       - name: Record built commit
         if: success()
         env:
@@ -560,4 +560,4 @@ jobs:
             gh release create built-commit --repo ${{ github.repository }} --prerelease \
               --title "上次成功建置的commit(月度cron的gate用)" --notes "${{ github.sha }}"
           fi
-          echo "已記錄本次成功建置的commit：${{ github.sha }}"
+          echo "已记录本次成功建置的commit：${{ github.sha }}"
