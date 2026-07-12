@@ -101,10 +101,12 @@ declare -A GC_PPSSPP_BUTTONS=(
 
 # NOTE(w2xg2022): 手柄三层架构定案(2026-07)——第三层「游戏内」一律「写死原厂位置对齐」，
 # 不再透传、不再看任何 ES 开关(原 InvertGameButtons/InvertXYButtons 已从 ES 移除)。
-# 这里直接写死成「位置对齐」的值(等同旧默认，实机验证正确)：AB 不额外翻(南✕东○)、
-# XY 走下面既有分支达成 □西△北 的几何对齐。保留下面两个 if 结构以维持输出完全一致。
+# ★2026-07-12 X98mini 实机修正★:SDL 语义键 a=南/b=东/x=西/y=北 本就位置对齐,
+# GC_PPSSPP_BUTTONS 默认表(a=Cross南/b=Circle东/x=Square西/y=Triangle北)即正确;
+# 但 `if EE_INVERT_XY=="false"` 分支会把 x/y 错误 swap 成 x=Triangle/y=Square(反逻辑),
+# 故 AB/XY 都必须设 true 跳过对应 swap 段,才是位置对齐(南✕东○西□北△,实机确认)。
 EE_INVERT_AB="true"
-EE_INVERT_XY="false"
+EE_INVERT_XY="true"
 
 if [[ "${EE_INVERT_AB}" == "false" ]]; then
   GC_PPSSPP_BUTTONS[a]="Circle"

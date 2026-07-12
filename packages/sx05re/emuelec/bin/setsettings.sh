@@ -654,6 +654,13 @@ for _inf in "/tmp/cores/${CORE}_libretro.info" "/usr/lib/libretro/${CORE}_libret
         break
     fi
 done
+# NOTE(w2xg2022): 个别核心 .info 的 corename 与 RA 运行时 library_name(=per-core remap
+# 文件夹名)大小写/拼写不一致→自动推导会写错文件夹→RA 加载不到→游戏内退回标签对齐=乱。
+# 这里对已知例外做修正。目前仅 applewin(.info=applewin 小写、library_name=AppleWin 大写,
+# 2026-07-12 X98mini 实机确认);其余13个默认核心 corename==library_name,无需修正。
+case "${EE_GAMEBTN_CORENAME_VAL}" in
+    applewin) EE_GAMEBTN_CORENAME_VAL="AppleWin" ;;
+esac
 if [[ -n "${EE_GAMEBTN_CORENAME_VAL}" ]]; then
     # NOTE(w2xg2022): 配合es4all的ES把「遊戲內按鍵對調」拆成兩個獨立設定，膠水
     # 也拆開分別套用(以前只有InvertGameButtons、一開就AB+XY一起翻，那其實是bug：
