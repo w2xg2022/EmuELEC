@@ -32,7 +32,7 @@
 
 | 型号 | 芯片 | GPU | 默认志愿 | 固件 |
 |---|---|---|---|---|
-| X98mini | Amlogic S905W2 (S4) | Mali-G31 | 第三（闭源 BSP + GLES） | [下载 .img.gz（约 1.25GB）](https://github.com/w2xg2022/EmuELEC/releases/download/X98mini-28893810285/EmuELEC-Amlogic-no.aarch64-4.8-Piers_devel_20260707194801-X98mini.img.gz) |
+| X98mini | Amlogic S905W2 (S4) | Mali-G31 | 第三（闭源 BSP + GLES） | [前往最新 Release 下载（约 1.25GB）](https://github.com/w2xg2022/EmuELEC/releases/latest) |
 
 ## 云编译
 
