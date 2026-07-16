@@ -45,6 +45,6 @@ make_target() {
 
 makeinstall_target() {
   mkdir -p ${INSTALL}/usr/lib/libretro
-  curl -sL -o ${INSTALL}/usr/lib/libretro/mame2003_plus_libretro.so \
-    https://github.com/w2xg2022/EmuELEC-MAME/releases/latest/download/mame2003_plus_libretro.so
+  curl -fsSL -o ${INSTALL}/usr/lib/libretro/mame2003_plus_libretro.so \
+    https://github.com/w2xg2022/EmuELEC-prebuilt-cores/releases/latest/download/mame2003_plus_libretro.so
 }
