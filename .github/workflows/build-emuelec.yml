@@ -88,29 +88,13 @@ jobs:
       matrix:
         model: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
-      - name: Maximize build space
-        uses: easimon/maximize-build-space@v10
-        with:
-          # NOTE(w2xg2022): root-reserve-mb太小(1024)，建置跑超过2小时后根目录(/tmp、
-          # runner自己的诊断log等杂项写入)会慢慢塞满，最终连runner本身都挂掉(No space
-          # left on device写进runner自己的trace log)。调大给更多余裕。
-          # 8192仍然不够(2小时后_diag/Worker_*.log累积太大)，调到16384。
-          root-reserve-mb: 16384
-          swap-size-mb: 512
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-          remove-docker-images: 'true'
-
-      - name: Show disk space
-        run: df -h
-
-      # NOTE(w2xg2022): ★apt 必须排在 checkpoint / kernel bundle 还原「之前」★
-      # (2026-07-16 坐实):还原会下载 ~11GB 接力状态,把 root 空间吃掉;apt 再跑就
-      # 「E: You don't have enough free space in /var/cache/apt/archives/」整个 job 挂
-      # (exit 100),根本还没开始编译。apt 跟 checkpoint 毫无关系,提到最前面、趁 root
-      # 空间最宽裕时装完最稳。以前能过是因为 checkpoint 还小,它越长越大终于跨过门槛。
+      # NOTE(w2xg2022): ★apt 必须是「第一步」——排在 Maximize build space 之前★(2026-07-16 坐实)
+      # maximize 会把 root 的空闲空间几乎全部划给 build LVM,只留 root-reserve(16G)给 root。
+      # 而这串依赖(libboost-all-dev/vlc/default-jre/一大堆 -dev)装起来要 10~15G,挤在 16G 里
+      # 刚好卡在边缘 → 时好时坏:同一份设定,有的 run 过、有的 run 直接
+      # 「E: You don't have enough free space in /var/cache/apt/archives/」exit 100 整个挂掉,
+      # 而且是在编译都还没开始之前。提到 maximize 之前跑,此时 root 有 ~88G 空闲,永远够;
+      # 之后 maximize 再把剩余空间划给 LVM(少 10~15G,核心已改预编译下载,build 空间够用)。
       - name: Install build dependencies
         run: |
           # NOTE(w2xg2022): GitHub官方runner映像档预装了packages.microsoft.com
@@ -131,6 +115,24 @@ jobs:
             libvpx-dev rdfind tzdata xfonts-utils lzop \
             libparse-yapp-perl gperf libxml-parser-perl patchutils zstd
           sudo apt-get clean
+
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@v10
+        with:
+          # NOTE(w2xg2022): root-reserve-mb太小(1024)，建置跑超过2小时后根目录(/tmp、
+          # runner自己的诊断log等杂项写入)会慢慢塞满，最终连runner本身都挂掉(No space
+          # left on device写进runner自己的trace log)。调大给更多余裕。
+          # 8192仍然不够(2小时后_diag/Worker_*.log累积太大)，调到16384。
+          root-reserve-mb: 16384
+          swap-size-mb: 512
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+
+      - name: Show disk space
+        run: df -h
 
       - name: Checkout
         uses: actions/checkout@v4
