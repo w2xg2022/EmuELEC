@@ -75,10 +75,12 @@ makeinstall_target() {
 }
 
 # ===== w2xg2022: 预编译核心覆写(prebuilt-cores) =====
-# NOTE(w2xg2022): 改用 w2xg2022/EmuELEC-prebuilt-cores 预编译的 ppsspp_libretro.so,不在主建置(尤其云端CI)
-# 重新编译这个核心,省建置时间与磁盘。bash 后定义覆盖前面的同名函数。
-# ⚠️ 工具链/glibc 变更后,须重跑该仓库的 build-cores workflow 重编,否则 ABI 不匹配。
-# curl 用 -f:HTTP 错误(如404)直接失败,避免把错误页当成 .so 装进固件。
+# NOTE(w2xg2022): 默认改用 w2xg2022/EmuELEC-prebuilt-cores 预编译的 ppsspp_libretro.so,不在主建置重编。
+# ★闸门 USE_PREBUILT_CORES★:预编译仓库(build-cores workflow)会设成 no,此时「不覆写」、
+# 走上面原本的源码编译流程 —— 否则会变成「预编译仓库跑这个包时又去下载自己」的循环,
+# 工具链一变就永远产不出新 .so(2026-07-16 被 mame 的 9-byte "Not Found" 坐实)。
+# curl 用 -f:HTTP 错误(404)直接失败,避免把错误页当成 .so 装进固件。
+if [ "${USE_PREBUILT_CORES:-yes}" = "yes" ]; then
 make_target() {
   : not
 }
@@ -88,3 +90,4 @@ makeinstall_target() {
   curl -fsSL -o ${INSTALL}/usr/lib/libretro/ppsspp_libretro.so \
     https://github.com/w2xg2022/EmuELEC-prebuilt-cores/releases/latest/download/ppsspp_libretro.so || { echo "预编译核心下载失败: ppsspp_libretro.so"; exit 1; }
 }
+fi
