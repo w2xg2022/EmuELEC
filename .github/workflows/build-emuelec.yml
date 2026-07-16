@@ -106,6 +106,32 @@ jobs:
       - name: Show disk space
         run: df -h
 
+      # NOTE(w2xg2022): ★apt 必须排在 checkpoint / kernel bundle 还原「之前」★
+      # (2026-07-16 坐实):还原会下载 ~11GB 接力状态,把 root 空间吃掉;apt 再跑就
+      # 「E: You don't have enough free space in /var/cache/apt/archives/」整个 job 挂
+      # (exit 100),根本还没开始编译。apt 跟 checkpoint 毫无关系,提到最前面、趁 root
+      # 空间最宽裕时装完最稳。以前能过是因为 checkpoint 还小,它越长越大终于跨过门槛。
+      - name: Install build dependencies
+        run: |
+          # NOTE(w2xg2022): GitHub官方runner映像档预装了packages.microsoft.com
+          # (azure-cli/microsoft-prod)的apt来源，我们的建置完全用不到Azure CLI，
+          # 但这两个来源偶尔会回403，apt-get update预设对任一来源失败都回传
+          # 非零结束码，搭配GitHub Actions的run:预设bash -e，整个step会在这里
+          # 直接中止(实测确认：ubuntu本身的套件列表都正常抓到，只有微软这两个
+          # 来源出问题)。跟我们自己的原始码完全无关，建置前先移除这两个用不到
+          # 的来源清单，避免apt-get update被它们拖垮。
+          sudo grep -rl 'packages.microsoft.com' /etc/apt/sources.list.d/ 2>/dev/null | xargs -r sudo rm -f
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            gcc make git unzip wget xz-utils libsdl2-dev libsdl2-mixer-dev \
+            libfreeimage-dev libfreetype6-dev libcurl4-openssl-dev rapidjson-dev \
+            libasound2-dev libgl1-mesa-dev build-essential libboost-all-dev cmake \
+            fonts-droid-fallback libvlc-dev libvlccore-dev vlc-bin texinfo premake4 \
+            golang libssl-dev curl patchelf xmlstarlet default-jre xsltproc \
+            libvpx-dev rdfind tzdata xfonts-utils lzop \
+            libparse-yapp-perl gperf libxml-parser-perl patchutils zstd
+          sudo apt-get clean
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -235,27 +261,6 @@ jobs:
           else
             echo "没有杂凑${KERNEL_HASH}对应的kernel bundle(首次建置或kernel/驱动有改动)，本轮将重编整组kernel lane"
           fi
-
-      - name: Install build dependencies
-        run: |
-          # NOTE(w2xg2022): GitHub官方runner映像档预装了packages.microsoft.com
-          # (azure-cli/microsoft-prod)的apt来源，我们的建置完全用不到Azure CLI，
-          # 但这两个来源偶尔会回403，apt-get update预设对任一来源失败都回传
-          # 非零结束码，搭配GitHub Actions的run:预设bash -e，整个step会在这里
-          # 直接中止(实测确认：ubuntu本身的套件列表都正常抓到，只有微软这两个
-          # 来源出问题)。跟我们自己的原始码完全无关，建置前先移除这两个用不到
-          # 的来源清单，避免apt-get update被它们拖垮。
-          sudo grep -rl 'packages.microsoft.com' /etc/apt/sources.list.d/ 2>/dev/null | xargs -r sudo rm -f
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            gcc make git unzip wget xz-utils libsdl2-dev libsdl2-mixer-dev \
-            libfreeimage-dev libfreetype6-dev libcurl4-openssl-dev rapidjson-dev \
-            libasound2-dev libgl1-mesa-dev build-essential libboost-all-dev cmake \
-            fonts-droid-fallback libvlc-dev libvlccore-dev vlc-bin texinfo premake4 \
-            golang libssl-dev curl patchelf xmlstarlet default-jre xsltproc \
-            libvpx-dev rdfind tzdata xfonts-utils lzop \
-            libparse-yapp-perl gperf libxml-parser-perl patchutils zstd
-          sudo apt-get clean
 
       - name: Build (${{ matrix.model }})
         run: |
