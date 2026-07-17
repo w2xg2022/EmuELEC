@@ -36,9 +36,25 @@ PKG_IS_ADDON="no"
 PKG_TOOLCHAIN="make"
 PKG_AUTORECONF="no"
 
-# NOTE(w2xg2022): 改用w2xg2022/EmuELEC-MAME预编译的.so,
-# 不在主建置(尤其云端CI磁盘有限)里重新编译这个重量级核心。
-# 若需要重新编译(MAME本体或工具链更新),到EmuELEC-MAME仓库手动触发rebuild workflow。
+# ★源码编译逻辑(上游原版)——必须保留★
+# USE_PREBUILT_CORES=no 时走这条,让 w2xg2022/EmuELEC-prebuilt-cores 仓库能真的「从源码」编出 .so。
+# 若把这条删掉(只留下面的下载覆写),预编译仓库跑本包时就变成「下载自己」的循环——
+# 2026-07-16 实际踩到:仓库改名那刻 releases/latest 还是空的 → 404 → 当时的 curl 没带 -f,
+# 把 9 bytes 的 "Not Found" 当成 .so 上传成「预编译核心」,固件里的 MAME 直接变成文本档。
+make_target() {
+  make ARCH="" CC="${CC}" NATIVE_CC="${CC}" LD="${CC}"
+}
+
+makeinstall_target() {
+  mkdir -p ${INSTALL}/usr/lib/libretro
+  cp mame2003_plus_libretro.so ${INSTALL}/usr/lib/libretro/
+}
+
+# ===== w2xg2022: 预编译核心覆写(prebuilt-cores) =====
+# 默认改用 w2xg2022/EmuELEC-prebuilt-cores 预编译的 .so,不在主建置(尤其云端 CI 磁盘有限)
+# 重编这个重量级核心。★闸门★:预编译仓库会设 USE_PREBUILT_CORES=no,此时不覆写、走上面的
+# 源码编译。curl 用 -f:HTTP 错误(404)直接让建置失败,绝不把错误页当成 .so 装进固件。
+if [ "${USE_PREBUILT_CORES:-yes}" = "yes" ]; then
 make_target() {
   : not
 }
@@ -46,5 +62,7 @@ make_target() {
 makeinstall_target() {
   mkdir -p ${INSTALL}/usr/lib/libretro
   curl -fsSL -o ${INSTALL}/usr/lib/libretro/mame2003_plus_libretro.so \
-    https://github.com/w2xg2022/EmuELEC-prebuilt-cores/releases/latest/download/mame2003_plus_libretro.so
+    https://github.com/w2xg2022/EmuELEC-prebuilt-cores/releases/latest/download/mame2003_plus_libretro.so \
+    || { echo "预编译核心下载失败: mame2003_plus_libretro.so"; exit 1; }
 }
+fi

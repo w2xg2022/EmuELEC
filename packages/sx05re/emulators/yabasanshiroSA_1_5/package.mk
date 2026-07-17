@@ -4,7 +4,11 @@ PKG_ARCH="any"
 PKG_LICENSE="GPLv2"
 PKG_SITE="https://github.com/devmiyax/yabause"
 PKG_URL="${PKG_SITE}.git"
-PKG_DEPENDS_TARGET="toolchain SDL2 boost openal-soft ${OPENGLES} zlib"
+# NOTE(w2xg2022): 补上 libpng —— src/retro_arena/main.cpp:65 直接 #include <libpng16/png.h>。
+# 全量建置时 libpng 碰巧被别的套件先编好,所以这个漏宣告一直没暴露;单独编本包(例如
+# EmuELEC-prebuilt-cores 仓库跑 ./scripts/build yabasanshiroSA_1_5:target)就会
+# 「fatal error: libpng16/png.h: No such file or directory」编译失败。
+PKG_DEPENDS_TARGET="toolchain SDL2 boost openal-soft ${OPENGLES} zlib libpng"
 PKG_LONGDESC="Yabause is a Sega Saturn emulator and took over as Yaba Sanshiro"
 PKG_TOOLCHAIN="cmake-make"
 GET_HANDLER_SUPPORT="git"

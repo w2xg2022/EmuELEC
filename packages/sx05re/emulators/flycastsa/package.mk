@@ -6,7 +6,11 @@ PKG_VERSION="bf2bd7efed41e9f3367a764c2d90fcaa9c38a1f9"
 PKG_LICENSE="GPLv2"
 PKG_SITE="https://github.com/flyinghead/flycast"
 PKG_URL="${PKG_SITE}.git"
-PKG_DEPENDS_TARGET="toolchain ${OPENGLES} alsa SDL2 libzip zip"
+# NOTE(w2xg2022): 补上 curl —— CMakeLists.txt:495 的 find_package(CURL) 是硬需求。
+# 全量建置时 curl 碰巧被别的套件先编好,所以这个漏宣告一直没暴露;单独编本包(例如
+# EmuELEC-prebuilt-cores 仓库跑 ./scripts/build flycastsa:target)就会
+# 「Could NOT find CURL (missing: CURL_LIBRARY CURL_INCLUDE_DIR)」configure 直接失败。
+PKG_DEPENDS_TARGET="toolchain ${OPENGLES} alsa SDL2 libzip zip curl"
 PKG_LONGDESC="Flycast is a multiplatform Sega Dreamcast, Naomi and Atomiswave emulator"
 PKG_TOOLCHAIN="cmake"
 PKG_GIT_CLONE_BRANCH="master"
