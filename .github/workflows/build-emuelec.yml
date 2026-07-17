@@ -176,9 +176,18 @@ jobs:
       - name: Compute kernel bundle hash
         run: |
           KERNEL_PKGS="linux gpu-aml media_modules-aml aic8800-sdio ap6xxx-aml mt76 mt7668-wifi-bt RTL8189FS RTL8723DS-aml RTL8851BU RTL8852BE-aml RTL8852BS-aml RTW88 w1-aml wifi_dummy-aml"
+          # ★★★ 2026-07-17 坐实的非决定性 bug + 修法(务必保留 sort)★★★
+          # 症状:c156a8c 与 cfe25b8 的 kernel 档案「一字不差」(VM 上两 commit 算出同一个
+          # 73e24e0b),runner 却给出不同 hash(4ca7429c vs 2ba8461a)→ bundle 永远命不中、
+          # 每轮都重编 kernel(~2h),40 分钟只在偶然命中时出现。
+          # 根因:下面 `grep -rl` 的输出★未排序★,而外层 for 循环按该顺序把各目录 hash 串接
+          # (linux 就匹配 4 个 package.mk、多数套件跨设备树匹配 2 个,共 26 个),顺序一变
+          # 串接结果就变。VM 上档案系统列举顺序稳定所以一致;runner 每轮 mkfs 全新 buildlv,
+          # 列举顺序会变 → 同源不同 hash。实测:正序/反序/sort 三种顺序 → 三个不同 hash。
+          # 修法:`| sort` 让档案清单顺序与档案系统无关,保证同源必同 hash。内层 find 早已 sort。
           HASH_INPUT=""
           for pkg in $KERNEL_PKGS; do
-            for f in $(grep -rl "^PKG_NAME=\"${pkg}\"\$" packages/ projects/ 2>/dev/null); do
+            for f in $(grep -rl "^PKG_NAME=\"${pkg}\"\$" packages/ projects/ 2>/dev/null | sort); do
               d=$(dirname "$f")
               HASH_INPUT="$HASH_INPUT $(find "$d" -type f | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1)"
             done
