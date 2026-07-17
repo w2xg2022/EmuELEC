@@ -88,13 +88,18 @@ jobs:
       matrix:
         model: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
-      # NOTE(w2xg2022): apt 排在 Maximize build space 之前,只是因为「装完再划分空间」比较自然;
-      # 这串依赖去重后实测约 2.5G(libboost-all-dev 1.4G 是最大户),对 88G 的 root 毫无压力,
-      # 顺序其实两边都能过。★别再把 apt 的失败归因到空间★——2026-07-17 逐条翻日志坐实:
-      #   - 空间不足会是 exit 100 + 「E: You don't have enough free space」且稳定重现;
-      #   - 而实际失败是 exit 2、开跑 100 秒就挂,且 742e9bc 与 f90330b 的 workflow 内容
-      #     一字不差却一次失败一次成功 → 是 apt 来源抓取的随机性失败,与空间无关。
-      # 故真正的修法是下面的重试,不是调顺序、也不是精简依赖。
+      # NOTE(w2xg2022): ★apt 必须排在 Maximize build space 之前★(2026-07-17 从原始 job log 坐实)
+      # 真因不是「依赖太肥」(去重后实测仅约 2.5G,download 只要 198MB),而是
+      # ★maximize 跑完后 root 只剩 100M 可用★:
+      #   maximize 之前  /dev/root 146G  58G  88G  40% /
+      #   maximize 之后  /dev/root 146G 146G 100M 100% /   ← apt 要 198MB,当然装不下
+      # 为何只剩 100M —— 见下面 Maximize 那步的 NOTE:这台 runner 的 /mnt 就在 root 上,
+      # 该 action 对同一颗磁碟挖两次,真正生效的保留量是 temp-reserve-mb(100 MiB),
+      # 不是 root-reserve-mb。故 apt 提前到此处跑(root 尚有 88G)是唯一可靠的解。
+      # 失败指纹存参:「E: You don't have enough free space in /var/cache/apt/archives/」+ exit 100
+      # (外层 step 汇总成 exit 2,别被外层的 2 骗了,要拉 job 原始 log 看内层)。
+      # ⚠️ 100M vs 198MB 属边缘值 → 会「时好时坏」(f90330b 过、内容一字不差的 742e9bc 挂),
+      # 别因为偶尔能过就以为与空间无关;资源卡在临界值同样会时好时坏。
       - name: Install build dependencies
         run: |
           # NOTE(w2xg2022): GitHub官方runner映像档预装了packages.microsoft.com
@@ -105,8 +110,9 @@ jobs:
           # 来源出问题)。跟我们自己的原始码完全无关，建置前先移除这两个用不到
           # 的来源清单，避免apt-get update被它们拖垮。
           sudo grep -rl 'packages.microsoft.com' /etc/apt/sources.list.d/ 2>/dev/null | xargs -r sudo rm -f
-          # NOTE(w2xg2022): 移除微软来源后仍会随机失败(ubuntu 官方 mirror 自己偶尔 5xx/超时),
-          # 一挂就是整个 job 白跑。重试 3 次、间隔递增;update 与 install 都要包。
+          # NOTE(w2xg2022): 重试纯粹是对「mirror 暂时性 5xx/超时」的便宜保险(一挂就是整个 job 白跑)。
+          # ★重试救不了空间不足★(retry 不会生出磁碟);空间那件事是靠「apt 排在 maximize 之前」
+          # 加上 temp-reserve-mb 解决的,见上方与 Maximize 那步的 NOTE。别把两者搞混。
           retry() {
             local i
             for i in 1 2 3; do
@@ -131,11 +137,20 @@ jobs:
       - name: Maximize build space
         uses: easimon/maximize-build-space@v10
         with:
-          # NOTE(w2xg2022): root-reserve-mb太小(1024)，建置跑超过2小时后根目录(/tmp、
-          # runner自己的诊断log等杂项写入)会慢慢塞满，最终连runner本身都挂掉(No space
-          # left on device写进runner自己的trace log)。调大给更多余裕。
-          # 8192仍然不够(2小时后_diag/Worker_*.log累积太大)，调到16384。
+          # ★★★ NOTE(w2xg2022) 2026-07-17 从 action 自己的 log 坐实,务必先读完再动这几个值 ★★★
+          # 这台 runner ★没有独立的 /mnt 暂存碟★(maximize 前的 df 只有 /dev/root + 3 个 tmpfs),
+          # 也就是 /mnt 就在 root 檔案系统上。而该 action 是「双 PV」设计,对同一颗磁碟挖两刀:
+          #   ① /pv.img        = ROOT_FREE(88G) - root-reserve(16G) = 72G  → root 剩 16G
+          #   ② /mnt/tmp-pv.img= TMP_FREE (16G) - temp-reserve(100M) = 15.9G → root 剩 100M ★
+          # 第二刀把第一刀留的 16G 又吃光 → ★真正生效的保留量是 temp-reserve-mb,不是
+          # root-reserve-mb★。实测 df 正好剩 100M,与 temp-reserve 预设值一字不差。
+          # 这也解释了历史上「root-reserve 从 1024→8192→16384 一路调大却毫无效果」——那个旋钮
+          # 在这台 runner 上从头到尾没生效过,调它是白工。要留空间给 root 就得调 temp-reserve-mb。
+          # 现设 temp-reserve-mb: 4096 → root 实际保有 4G(而非 100M),代价是 build LVM
+          # 少 4G(约 88G→84G;核心已改预编译下载,不再本地编 MAME 等大户,空间充裕)。
+          # ⚠️ 别把 temp-reserve-mb 设到 >= root-reserve-mb:第二刀会算出负数/0,fallocate 会炸。
           root-reserve-mb: 16384
+          temp-reserve-mb: 4096
           swap-size-mb: 512
           remove-dotnet: 'true'
           remove-android: 'true'
