@@ -87,6 +87,20 @@ jobs:
       fail-fast: false
       matrix:
         model: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    # NOTE(w2xg2022): ★同型号必须序列化,不可并行★(2026-07-17 手滑触发两轮才暴露的老坑)
+    # 本 workflow 的接力机制是「还原 checkpoint → 编译 → 存回 checkpoint」,同型号两轮并行
+    # 会同时往同一个 build-state-<model> Release 写状态,互相覆盖 → 接力快取写坏。
+    # ★用 job 层级 concurrency(不是 workflow 层级)★:group 要带 matrix.model,不同型号
+    # (X98mini / E900V22C)本来就该并行,只有「同型号」才需互斥。job 层级的 concurrency 可以
+    # 存取 matrix context —— 注意 job 层级的 `if` 不行,别搞混(prebuilt-cores 那支就因此
+    # 改成让 prepare 动态产生 matrix)。
+    # ★cancel-in-progress 选 false(排队)而非 true(取消旧的)★,两个理由:
+    #   ① 接力最怕两个 writer,排队能让状态严格序列化;
+    #   ② 取消并不干净 —— 实测被取消的 run 照样执行了 `Save build checkpoint`(那步是
+    #      if: always()),等于取消也会写一次 checkpoint,反而更乱。
+    concurrency:
+      group: build-${{ matrix.model }}
+      cancel-in-progress: false
     steps:
       # NOTE(w2xg2022): ★apt 必须排在 Maximize build space 之前★(2026-07-17 从原始 job log 坐实)
       # 真因不是「依赖太肥」(去重后实测仅约 2.5G,download 只要 198MB),而是
