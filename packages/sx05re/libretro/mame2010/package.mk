@@ -26,7 +26,11 @@ PKG_ARCH="any"
 PKG_LICENSE="MAME"
 PKG_SITE="https://github.com/libretro/mame2010-libretro"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
-PKG_DEPENDS_TARGET="toolchain"
+# NOTE(w2xg2022): 补上 zlib —— 链接期需要 -lz(src/lib/util/png.c 等用到)。
+# 全量建置时 zlib 碰巧被别的套件先编好,所以这个漏宣告一直没暴露;单独编本包(例如
+# EmuELEC-prebuilt-cores 仓库跑 ./scripts/build mame2010:target)就会
+# 「ld.gold: error: cannot find -lz」链接失败。
+PKG_DEPENDS_TARGET="toolchain zlib"
 PKG_PRIORITY="optional"
 PKG_SECTION="libretro"
 PKG_SHORTDESC="Late 2010 version of MAME (0.139) for libretro. Compatible with MAME 0.139 romsets."
