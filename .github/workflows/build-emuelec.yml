@@ -88,13 +88,13 @@ jobs:
       matrix:
         model: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
-      # NOTE(w2xg2022): ★apt 必须是「第一步」——排在 Maximize build space 之前★(2026-07-16 坐实)
-      # maximize 会把 root 的空闲空间几乎全部划给 build LVM,只留 root-reserve(16G)给 root。
-      # 而这串依赖(libboost-all-dev/vlc/default-jre/一大堆 -dev)装起来要 10~15G,挤在 16G 里
-      # 刚好卡在边缘 → 时好时坏:同一份设定,有的 run 过、有的 run 直接
-      # 「E: You don't have enough free space in /var/cache/apt/archives/」exit 100 整个挂掉,
-      # 而且是在编译都还没开始之前。提到 maximize 之前跑,此时 root 有 ~88G 空闲,永远够;
-      # 之后 maximize 再把剩余空间划给 LVM(少 10~15G,核心已改预编译下载,build 空间够用)。
+      # NOTE(w2xg2022): apt 排在 Maximize build space 之前,只是因为「装完再划分空间」比较自然;
+      # 这串依赖去重后实测约 2.5G(libboost-all-dev 1.4G 是最大户),对 88G 的 root 毫无压力,
+      # 顺序其实两边都能过。★别再把 apt 的失败归因到空间★——2026-07-17 逐条翻日志坐实:
+      #   - 空间不足会是 exit 100 + 「E: You don't have enough free space」且稳定重现;
+      #   - 而实际失败是 exit 2、开跑 100 秒就挂,且 742e9bc 与 f90330b 的 workflow 内容
+      #     一字不差却一次失败一次成功 → 是 apt 来源抓取的随机性失败,与空间无关。
+      # 故真正的修法是下面的重试,不是调顺序、也不是精简依赖。
       - name: Install build dependencies
         run: |
           # NOTE(w2xg2022): GitHub官方runner映像档预装了packages.microsoft.com
@@ -105,8 +105,20 @@ jobs:
           # 来源出问题)。跟我们自己的原始码完全无关，建置前先移除这两个用不到
           # 的来源清单，避免apt-get update被它们拖垮。
           sudo grep -rl 'packages.microsoft.com' /etc/apt/sources.list.d/ 2>/dev/null | xargs -r sudo rm -f
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+          # NOTE(w2xg2022): 移除微软来源后仍会随机失败(ubuntu 官方 mirror 自己偶尔 5xx/超时),
+          # 一挂就是整个 job 白跑。重试 3 次、间隔递增;update 与 install 都要包。
+          retry() {
+            local i
+            for i in 1 2 3; do
+              "$@" && return 0
+              echo "::warning::apt 第 ${i} 次失败($*),$((i*15))s 后重试"
+              sleep $((i*15))
+            done
+            echo "::error::apt 重试 3 次仍失败: $*"
+            return 1
+          }
+          retry sudo apt-get update
+          retry sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
             gcc make git unzip wget xz-utils libsdl2-dev libsdl2-mixer-dev \
             libfreeimage-dev libfreetype6-dev libcurl4-openssl-dev rapidjson-dev \
             libasound2-dev libgl1-mesa-dev build-essential libboost-all-dev cmake \
@@ -562,17 +574,32 @@ jobs:
           path: out/*
           if-no-files-found: warn
 
+      # NOTE(w2xg2022): 改用 gh CLI + 重试,取代 softprops/action-gh-release@v2。
+      # 2026-07-17 坐实:run 29537291663 的 Build/Collect/Upload artifact 全部成功,
+      # 整整 1h42m 的编译成果只因这一步撞上 GitHub 自己的 500(回传 "Unicorn! · GitHub"
+      # 错误网页,而非 API JSON)就全部报废。这类 5xx 是 GitHub 端的暂时性故障,重试即可,
+      # 绝不该让一轮云编译白跑。顺带避开该 action 把 tag 解析成 refs/heads/main 的怪象。
       - name: Create release
         if: success()
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ matrix.model }}-${{ github.run_id }}
-          name: "EmuELEC ${{ matrix.model }} (${{ github.run_id }})"
-          files: out/*
-          make_latest: "true"
-          body: |
-            自动云编译：${{ env.PROJECT }}/${{ env.DEVICE }} SUBDEVICE=${{ matrix.model }}
-            触发方式：${{ github.event_name }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ matrix.model }}-${{ github.run_id }}
+        run: |
+          NOTES="自动云编译：${PROJECT}/${DEVICE} SUBDEVICE=${{ matrix.model }}
+          触发方式：${{ github.event_name }}"
+          for i in 1 2 3 4 5; do
+            if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+              gh release upload "$TAG" out/* --repo "${{ github.repository }}" --clobber && exit 0
+            else
+              gh release create "$TAG" out/* --repo "${{ github.repository }}" \
+                --title "EmuELEC ${{ matrix.model }} (${{ github.run_id }})" \
+                --notes "$NOTES" --latest && exit 0
+            fi
+            echo "::warning::建立 Release 第 ${i} 次失败(多半是 GitHub 5xx),$((i*20))s 后重试"
+            sleep $((i*20))
+          done
+          echo "::error::建立 Release 重试 5 次仍失败"
+          exit 1
 
       # NOTE(w2xg2022): 只有真的完整编出韧体(success)才记录本次commit到built-commit
       # 这个Release的body，供下次schedule触发时的gate比对「代码有没有变」。
