@@ -350,6 +350,14 @@ jobs:
               # ★必须连 glibc/libc 一起重建★：花屏根因就是 glibc build/ 不完整,只重编 linux/
               # 驱动而不重编 glibc,glibc 的 .<target>/elf/ld*.so 还是缺,initramfs 照样没 libc。
               echo "[kernel重建] 强制重建 glibc + 整组kernel bundle(linux+14驱动) + initramfs + 重烤KERNEL"
+              # ★★★ 2026-07-17 坐实的恶性循环,这行是解药 ★★★
+              # 本轮真的重编了 kernel lane → 必须让后面的「Save kernel bundle」把成果覆盖回去。
+              # 旧逻辑只认手动 rebuild_kernel=true,自愈重编的好 KERNEL 会被丢掉(save 步骤 1 秒
+              # 就 exit 0,输出「杂凑xxx的kernel bundle已存在，无需重复上传」)→ 坏 bundle 永远
+              # 留着 → 下一轮又侦测到坏 → 又重编 103 分钟 → 又拒绝存回。run 29572079462 实测:
+              # 全轮 1h52m,其中 Build 103m(91.7%)整段就是这个白烧的重建,且成果照样被丢弃。
+              # ★这个坑是静默的★:没有任何错误讯息,只表现为「编译莫名其妙变慢一倍」。
+              echo "KERNEL_REBUILT=1" >> "$GITHUB_ENV"
               for kp in glibc libc linux gpu-aml media_modules-aml aic8800-sdio ap6xxx-aml mt76 mt7668-wifi-bt \
                         RTL8189FS RTL8723DS-aml RTL8851BU RTL8852BE-aml RTL8852BS-aml RTW88 \
                         w1-aml wifi_dummy-aml initramfs; do
@@ -447,14 +455,23 @@ jobs:
           if [ "$MISSING" = "1" ]; then exit 0; fi
           RELEASE_TAG="kernel-state-${{ matrix.model }}-${KERNEL_HASH}"
           if gh release view "${RELEASE_TAG}" --repo ${{ github.repository }} >/dev/null 2>&1; then
-            # NOTE(w2xg2022): rebuild_kernel=true(修复缓存坏KERNEL)时,即使同hash也要覆盖——
+            # NOTE(w2xg2022): 同hash的旧bundle在「本轮真的重编过kernel」时必须覆盖——
             # 旧bundle烤进了空initramfs是坏的,必须用本轮重编的好bundle替换,否则下轮又还原坏的。
-            if [ "${{ github.event.inputs.rebuild_kernel }}" = "true" ]; then
-              echo "rebuild_kernel=true → 删除旧的同hash kernel bundle,用本轮重编的好bundle覆盖"
+            # ★2026-07-17 修★:触发条件不能只认手动 rebuild_kernel=true,还要认 KERNEL_REBUILT=1
+            # (Build 步骤里自愈侦测到坏 Image.lzo 而重建时会写进 GITHUB_ENV)。
+            # 旧逻辑漏了自愈这条 → 自愈花 103 分钟编出的好 KERNEL 被丢掉、坏 bundle 永远留着
+            # → 每一轮都重蹈覆辙(run 29572079462: 1h52m,其中 103m 全花在这个白烧的重建上)。
+            # ★这个坑是静默的★:不报错,只表现为「编译莫名其妙变慢一倍」,极难察觉。
+            if [ "${{ github.event.inputs.rebuild_kernel }}" = "true" ] || [ "${KERNEL_REBUILT:-0}" = "1" ]; then
+              if [ "${KERNEL_REBUILT:-0}" = "1" ]; then
+                echo "本轮自愈重编了kernel lane(KERNEL_REBUILT=1) → 删除旧的坏bundle,用本轮的好bundle覆盖"
+              else
+                echo "rebuild_kernel=true → 删除旧的同hash kernel bundle,用本轮重编的好bundle覆盖"
+              fi
               gh release delete "${RELEASE_TAG}" --repo ${{ github.repository }} --yes --cleanup-tag 2>/dev/null || true
               sleep 3
             else
-              echo "杂凑${KERNEL_HASH}的kernel bundle已存在，无需重复上传"
+              echo "杂凑${KERNEL_HASH}的kernel bundle已存在且本轮未重编kernel，无需重复上传"
               exit 0
             fi
           fi
