@@ -12,6 +12,10 @@ on:
         type: boolean
         required: false
         default: false
+      seed_from:
+        description: '本型号首次建置时,从哪个兄弟型号 seed base(工具链+userland),仅重编设备/内核专属包。留空=不 seed,从零建。只对同 DEVICE(Amlogic-no)有效。例:X98mini'
+        required: false
+        default: ''
   # NOTE(w2xg2022): 月度cron暂时停用——目前还在适配期(平行编译/接力机制调试中)，
   # 先不让它自动触发以免干扰或浪费云端时数。适配稳定后把下面schedule取消注释即可
   # 重新启用。启用后的逻辑已做好(见prepare的gate步骤)：仅在repo commit相对上次
@@ -267,8 +271,75 @@ jobs:
               rm -rf build.*/
             fi
           else
-            echo "没有找到之前的接力状态，从零开始建置"
             rm -rf "${STATE_DIR}"
+            # ═══════════════════════════════════════════════════════════════════
+            # NOTE(w2xg2022) 2026-07-17: 新型号「seed base」加速。本型号自己没有
+            # checkpoint 时,若指定了 seed_from,就借用兄弟型号的 base(工具链+userland,
+            # 即 packages/ 共用树,跨同 DEVICE 的 subdevice 完全相同),只重编「会因
+            # SUBDEVICE 而不同」的设备/内核专属包。省掉 ~500 个 userland 套件的从零重编。
+            # ★安全模型★:opt-in——不给 seed_from 就走原来的「从零建置」,对现有型号零影响。
+            # ★正确性关键★:seed 进来的是来源型号的 kernel/bootloader/dtb,必须全部作废,
+            # 否则新型号会用到错的 KERNEL/dtb → 开不了机(静默!Build 步骤的自愈会把来源的
+            # 好 Image.lzo 判为「完好」而沿用)。作废集=保守取:
+            #   ① projects/Amlogic-ce/ 底下所有包的 PKG_NAME(设备族+subdevice+CoreELEC 裸机
+            #      交叉工具链+u-boot/dtb/驱动等);
+            #   ② 15 个 kernel lane 包(linux 在 packages/ 共用树,①抓不到,须显式列);
+            #   ③ bootloader/dtb 的 glob 保险(bl301 的 PKG_NAME 含变量 ${...},靠名字抓不到)。
+            # 保留 packages/(目标工具链+glibc+userland)——这才是省下来的大头。
+            # ⚠️ 未端到端验证(E900V22C 的 Amlogic-no 支援尚未进 main),首次实测须核对
+            #    产物的 dtb/kernel 确实是本型号的,而非来源型号的。
+            SEED="${{ github.event.inputs.seed_from }}"
+            if [ -n "$SEED" ] && [ "$SEED" != "${{ matrix.model }}" ]; then
+              SEED_TAG="build-state-${SEED}"
+              SEED_DIR="${{ github.workspace }}/_seed_parts"
+              mkdir -p "${SEED_DIR}"
+              if gh release download "${SEED_TAG}" -p 'state.tar.zst.part*' -D "${SEED_DIR}" --repo ${{ github.repository }} 2>/dev/null && ls "${SEED_DIR}"/state.tar.zst.part* >/dev/null 2>&1; then
+                echo "[seed] 本型号无 checkpoint → 从兄弟型号 ${SEED} 借用 base(工具链+userland)"
+                cat "${SEED_DIR}"/state.tar.zst.part* > "${STATE_FILE}"
+                rm -rf "${SEED_DIR}"
+                if zstd -t "${STATE_FILE}" 2>/dev/null; then
+                  tar -I zstd -xf "${STATE_FILE}" -C "${{ github.workspace }}"
+                  rm -f "${STATE_FILE}"
+                  BD=$(ls -d build.*/ 2>/dev/null | head -1)
+                  if [ -z "$BD" ]; then
+                    echo "[seed] 解压后无 build 目录,回退从零建置"
+                  else
+                    # ★作废集=显式审核清单(不用目录扫描)★。2026-07-17 grep 全树坐实:CoreELEC
+                    # 把大量「设备族层级、跨 subdevice 相同」的重物(clang/gcc-linaro 交叉编译器/
+                    # hyperion.ng 等)塞在 devices/Amlogic-no/packages/ 下,目录扫描会误伤它们
+                    # → 白白重编数小时。真正「因 SUBDEVICE 而不同」的只有两类,列举如下:
+                    #   ① kernel lane(15 个):linux + gpu-aml + 各 wifi/bt 驱动。本就 per-model
+                    #      bundle,新型号必重编,顺带在此作废确保来源型号的 KERNEL 不被沿用。
+                    #   ② bootloader/dtb 链:package.mk 里读 $SUBDEVICE 的(grep 坐实=u-boot/bl301/
+                    #      *-dtb),用来源型号(X98mini)编的会带错 dtb/bootloader → 新型号开不了机。
+                    # 其余(目标工具链/glibc/~500 userland/kodi/clang/交叉编译器)全部保留复用=省时大头。
+                    # ⚠️ 这份清单未端到端验证:E900V22C 的 Amlogic-no 支援进 main 后,首次 seed 建置
+                    #    的固件必须核对 dtb+KERNEL 确实是本型号的;若开不了机,多半是这里漏列了某个
+                    #    subdevice-varying 包,补进本清单即可。
+                    INVAL="linux gpu-aml media_modules-aml aic8800-sdio ap6xxx-aml mt76 mt7668-wifi-bt RTL8189FS RTL8723DS-aml RTL8851BU RTL8852BE-aml RTL8852BS-aml RTW88 w1-aml wifi_dummy-aml u-boot u-boot-Alta u-boot_firmware bl30 inject_bl301 aml-dtbtools dtb-xml e900v22c-dtb"
+                    CNT=0
+                    for n in $INVAL; do
+                      if [ -e "${BD}.stamps/${n}" ] || ls -d "${BD}install_pkg/${n}-"* >/dev/null 2>&1; then CNT=$((CNT+1)); fi
+                      rm -rf "${BD}.stamps/${n}" "${BD}install_pkg/${n}-"* 2>/dev/null
+                    done
+                    # glob 兜底:bl301 的 PKG_NAME 含变量 ${BL2_MIN_VERSION} 靠名字抓不到;各种 *-dtb
+                    rm -rf "${BD}.stamps/"bl30* "${BD}.stamps/"*dtb* "${BD}.stamps/"u-boot* \
+                           "${BD}install_pkg/"bl30* "${BD}install_pkg/"*dtb* "${BD}install_pkg/"u-boot* 2>/dev/null
+                    echo "[seed] 完成:保留共用 base(工具链+glibc+userland+clang/kodi 等设备族共用重物),"
+                    echo "[seed]       已作废 ${CNT} 个 kernel/bootloader/dtb 专属包(+glob 兜底),待本轮重编本型号版本"
+                    du -sh ${BD}toolchain ${BD}install_pkg ${BD}.stamps 2>/dev/null
+                  fi
+                else
+                  echo "[seed] 状态损坏,回退从零建置"
+                  rm -f "${STATE_FILE}"; rm -rf build.*/
+                fi
+              else
+                echo "[seed] 指定了 seed_from=${SEED} 但下载不到 build-state-${SEED},从零开始建置"
+                rm -rf "${SEED_DIR}"
+              fi
+            else
+              echo "没有找到之前的接力状态(未指定 seed_from)，从零开始建置"
+            fi
           fi
 
       # NOTE(w2xg2022): 在通用checkpoint还原「之后」执行，确保kernel bundle的
