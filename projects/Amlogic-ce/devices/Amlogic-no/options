@@ -115,9 +115,11 @@
                       aic8800-sdio RTW88 RTL8189FS RTL8852BE-aml RTL8723DS-aml
                       RTL8851BU RTL8852BS-aml mt76 mt7668-wifi-bt w1-aml"
 
-  # NOTE(w2xg2022): uwe5631-aml給E900V22C(Skyworth,g12a/S905X2)的uwe5621ds WiFi/藍牙用，
-  # 編譯會失敗(wcn_dump.o)，只限E900V22C才加，避免拖累其他SUBDEVICE(如X98mini)的編譯。
-  # no線原本沒列這個套件(ng線options有)。詳見project_e900v22c記憶。
+  # NOTE(w2xg2022): uwe5631-aml給E900V22C(Skyworth,S905L3A/g12a)的uwe5621ds WiFi/藍牙用。
+  # 曾炸在wcn_dump.o，根因是共用package釘在master(源碼只認到5.6)；no線已在
+  # devices/Amlogic-no/packages/下override成上游linux-5.15分支。
+  # 仍只限E900V22C才加，別的板子沒這顆晶片，沒必要拖編譯時間。
+  # no線原本沒列這個套件(ng線options有)。詳見記憶 e900v22c-5-15-adaptation。
   if [ "${SUBDEVICE}" = "E900V22C" ]; then
     ADDITIONAL_DRIVERS="${ADDITIONAL_DRIVERS} uwe5631-aml"
   fi
@@ -155,6 +157,12 @@
     ADDITIONAL_PACKAGES="u-boot-script dtc CoreELEC-Debug-Scripts inject_bl301 ceemmc
                        nfs-utils dtb-xml megatools tmate parse-android-dynparts"
 
+  # NOTE(w2xg2022): e900v22c-dtb只裝一個67KB的dtb，但只有E900V22C的開機鏈會用到，
+  # 其他SUBDEVICE不必帶著，所以跟uwe5631-aml一樣做條件加入。
+  if [ "${SUBDEVICE}" = "E900V22C" ]; then
+    ADDITIONAL_PACKAGES="${ADDITIONAL_PACKAGES} e900v22c-dtb"
+  fi
+
   # add OOTB support for IR remote
   # IR_REMOTE_KEYMAPS+=""
 
@@ -163,9 +171,9 @@
     ENTWARE_ARCH="aarch64-k3.10"
 
   # CoreELEC Subdevices #Khadas_VIM4 Khadas_VIM1S Odroid_C4 Odroid_N2 Radxa_Zero Radxa_Zero2 Alta Solitude
-  # NOTE(w2xg2022): X98mini只需要單一張image(自己的dtb已在subdevice_config.sh註冊)，
+  # NOTE(w2xg2022): X98mini/E900V22C只需要單一張image(自己的dtb已在subdevice_config.sh註冊)，
   # 不要跑過整個CoreELEC板型清單(否則SUBDEVICES迴圈會覆蓋SUBDEVICE，產生9張不相關的image)
-  if [ "${SUBDEVICE}" = "X98mini" ]; then
+  if [ "${SUBDEVICE}" = "X98mini" ] || [ "${SUBDEVICE}" = "E900V22C" ]; then
     SUBDEVICES=""
   else
     SUBDEVICES="Khadas_VIM4 Khadas_VIM1S Odroid_C4 Odroid_N2 Radxa_Zero Radxa_Zero2 Alta Solitude"

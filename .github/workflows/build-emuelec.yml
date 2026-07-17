@@ -44,7 +44,7 @@ jobs:
             MODELS="${{ vars.MODELS }}"
           fi
           if [ -z "$MODELS" ]; then
-            MODELS="X98mini"
+            MODELS="X98mini E900V22C"
           fi
           JSON=$(printf '%s\n' $MODELS | jq -R . | jq -s -c .)
           echo "matrix=$JSON" >> "$GITHUB_OUTPUT"

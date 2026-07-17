@@ -76,6 +76,12 @@ case ${1} in
     DEVICE_CFGLOAD="Generic_cfgload"
     DEVICE_DTB="device_trees/s4_s905w2_4g.dtb"
   ;;
+  E900V22C)
+    DEVICE_CFGLOAD="Generic_cfgload"
+    # CoreELEC-22預編vendor dtb(corebian實機驗證過WiFi/BT)，由e900v22c-dtb套件裝入，
+    # 不是device_trees/裡自己編的那顆。原因見該套件package.mk。
+    DEVICE_DTB="E900V22C_dtb.img"
+  ;;
   Generic)
     DEVICE_CFGLOAD="${1}_cfgload"
   ;;
