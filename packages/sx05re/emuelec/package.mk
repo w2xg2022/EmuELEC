@@ -80,6 +80,24 @@ if [ "${DEVICE}" == "RK356x" ] || [ "${DEVICE}" == "OdroidM1" ]; then
 	done
 fi
 
+# --- 瘦身构建: 默认从固件剔除的包清单 (EMMC_SLIM, 默认 yes) ----------------
+# 这些包默认不编进任何固件: 体积大又冷门, 为 2+8G 小盒子省空间, 也让 SYSTEM
+# 更接近能塞进 eMMC 的 1GB system 分区(见 installtoemmc.sh 的 e900v22c 分支)。
+# 想要完整版(保留这些包)编译时设 EMMC_SLIM=no。
+#
+# 扩展办法: 往 SLIM_EXCLUDE 追加包名(用 PKG_DEPENDS_TARGET 里的写法, 空格分隔)。
+# 目前清单:
+#   scummvm    ScummVM libretro core  (~100MB)  点击式老冒险游戏, 小众
+#   scummvmsa  ScummVM standalone     (~85MB)
+EMMC_SLIM="${EMMC_SLIM:-yes}"
+SLIM_EXCLUDE="scummvm scummvmsa"
+
+if [ "${EMMC_SLIM}" != "no" ]; then
+  for slimpkg in ${SLIM_EXCLUDE}; do
+    PKG_DEPENDS_TARGET=$(echo ${PKG_DEPENDS_TARGET} | sed "s|${slimpkg} | |g")
+  done
+fi
+
 makeinstall_target() {
 
 	mkdir -p ${INSTALL}/usr/bin

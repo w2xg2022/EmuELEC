@@ -3,9 +3,17 @@
 ACTION=$1
 shift
 
+# connmanctl scan wifi 在某些板子(如 E900V22C 的 uwe5631)会卡住 30s+ 不返回,
+# 而 batocera-wifi scanlist 被 ES 同步调用 -> 整个 UI 冻结。这里给扫描加 timeout
+# 护栏(distro 侧兜底,与 es4all 前端的异步/超时保护互补):扫描慢就返回已知列表,
+# 绝不无限阻塞。SCAN_TIMEOUT 可用环境变量覆盖。
+SCAN_TIMEOUT="${WIFI_SCAN_TIMEOUT:-10}"
+
 do_help() {
     echo "${1} scanlist" >&2
     echo "${1} list" >&2
+    echo "${1} enable" >&2
+    echo "${1} disable" >&2
 }
 
 remove_last_word() {
@@ -22,8 +30,19 @@ do_list() {
 }
 
 do_scanlist() {
-    connmanctl scan wifi >/dev/null 2>/dev/null
+    timeout "${SCAN_TIMEOUT}" connmanctl scan wifi >/dev/null 2>/dev/null
     do_list
+}
+
+# 之前 EmuELEC 的 batocera-wifi 没有 enable/disable, 导致 ES 的「启用 WIFI」是空操作。
+# 补上: rfkill 解除软阻塞 + connman 打开/关闭 wifi technology。
+do_enable() {
+    rfkill unblock wifi 2>/dev/null
+    connmanctl enable wifi >/dev/null 2>/dev/null
+}
+
+do_disable() {
+    connmanctl disable wifi >/dev/null 2>/dev/null
 }
 
 case "${ACTION}" in
@@ -32,6 +51,12 @@ case "${ACTION}" in
 	;;
     "scanlist")
 	do_scanlist
+	;;
+    "enable")
+	do_enable
+	;;
+    "disable")
+	do_disable
 	;;
     *)
 	do_help "${0}"

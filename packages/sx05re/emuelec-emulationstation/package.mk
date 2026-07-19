@@ -6,8 +6,8 @@
 # 布局侦测基础上又拆了游戏内AB/XY互换为两颗独立开关、补齐布局侦测精灵简繁翻译、
 # 摇杆按下文案统一)，而非 es4all/dist/emuelec 里 pin 的旧值。
 PKG_NAME="emuelec-emulationstation"
-PKG_VERSION="423ffb0e6c48f2e60b8109a793b7bd41750ca536"
-PKG_GIT_CLONE_BRANCH="main"
+PKG_VERSION="0cd366ba4e585a03cf33a4e84d9ece921a4254fb"
+PKG_GIT_CLONE_BRANCH="v1.1-dev"
 PKG_REV="1"
 PKG_ARCH="any"
 PKG_LICENSE="GPL"

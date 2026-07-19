@@ -94,7 +94,7 @@ teardown_android_super() {
 #
 # To add a new box: add a case entry here and append its name to BOARDS.
 # ---------------------------------------------------------------------------
-BOARDS="x98mini"
+BOARDS="x98mini e900v22c"
 
 board_config() {
     SUPER_TEARDOWN=""   # default: boards that don't reuse Android 'super'
@@ -109,6 +109,21 @@ board_config() {
         STORAGE_MIN_MB=10000
         SUPER_TEARDOWN="yes"   # FLASH_DEV is the Android 'super' dm container
         DESC="X98mini (Amlogic S905W2/S4, 32GB eMMC)"
+        ;;
+    e900v22c)
+        # 与 X98mini 不同: 这台 8GB eMMC 只有「一个」够大的工厂分区(data 5.5GB)。
+        # 所以 boot 与 storage 不能都用大分区: system(1GB FAT)=CE_FLASH 放
+        # SYSTEM+kernel; data(5.5GB ext4)=CE_STORAGE 当大 ROM(用户要 ROM 大)。
+        # ★必须用 -emmc 版固件★: 完整版 SYSTEM(1.27G lzo)塞不进 system(1G),
+        # -emmc 版已砍 ScummVM + zstd 重压到 ~857M 才塞得下。安装前会检查 SYSTEM
+        # 大小, 塞不下就挡下并提醒(见下方 check)。
+        # 无 Android super 动态分区, 不需要 teardown。
+        FLASH_DEV="/dev/system"
+        STORAGE_DEV="/dev/data"
+        FLASH_MIN_MB=900;   FLASH_MAX_MB=1100
+        STORAGE_MIN_MB=4000
+        SUPER_TEARDOWN=""
+        DESC="E900V22C (Amlogic S905L3A/G12A, 8GB eMMC, -emmc 版固件)"
         ;;
     *)
         return 1
@@ -180,6 +195,22 @@ if [ "$FLASH_SIZE_MB" -lt "$FLASH_MIN_MB" ] || [ "$FLASH_SIZE_MB" -gt "$FLASH_MA
 fi
 if [ "$STORAGE_SIZE_MB" -lt "$STORAGE_MIN_MB" ]; then
     die "Unexpected size for ${STORAGE_DEV}: ${STORAGE_SIZE_MB}MB (expected >=${STORAGE_MIN_MB}MB). Refusing - wrong device?"
+fi
+
+# /flash 的内容(SYSTEM squashfs + kernel.img)必须塞得进 FLASH_DEV。对 E900V22C
+# 这类 boot 分区偏小(system 1GB)的板子特别重要: 完整(U盘)版 SYSTEM 是 lzo 压的
+# ~1.27G, 塞不进; 必须用 -emmc 版(SYSTEM 砍掉 ScummVM 再用 zstd 压到 ~857M)。
+# 提前挡下, 免得格式化后才在 cp 阶段 no-space 失败(那时 Android 已经被抹了)。
+FLASH_NEED_MB=$(du -sm /flash 2>/dev/null | cut -f1)
+FLASH_AVAIL_MB=$(( FLASH_SIZE_MB - 16 ))   # 扣掉 FAT32 表/保留区余量
+if [ -n "$FLASH_NEED_MB" ] && [ "$FLASH_NEED_MB" -gt "$FLASH_AVAIL_MB" ]; then
+    die "/flash 需要 ${FLASH_NEED_MB}MB, 但 ${FLASH_DEV} 只有约 ${FLASH_AVAIL_MB}MB 可用。
+拒绝安装(尚未改动任何分区)。
+
+原因: 你现在跑的固件 SYSTEM 太大, 塞不进这块 boot 分区。
+E900V22C 请改用 ★-emmc 版固件★ 刷 U 盘后再执行本安装:
+  -emmc 版已砍掉 ScummVM 并用 zstd 重压, SYSTEM 约 857MB, 才塞得进 system(1GB)。
+无后缀的普通版是 U 盘日常用的完整版, 不能装进本机 eMMC。"
 fi
 
 cat <<EOF
