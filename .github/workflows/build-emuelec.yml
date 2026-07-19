@@ -517,15 +517,20 @@ jobs:
               -exec rm -rf {} + 2>/dev/null || true
           fi
           # 收集要保留的build目录(glibc/icu + initramfs相关包，可能不存在，用glob展开)
+          # ★2026-07-20 修: 结尾必须 `|| true`。EmuELEC 建置系统编完一个包就删掉它的
+          # build/<pkg>(省空间),所以存档时这些 glob 很可能全部撲空,ls 回 exit 2。步骤是
+          # `bash -eo pipefail`,command-substitution 里 ls 失败会触发 set -e 直接中止整个
+          # 存档步骤(死在打包前)→checkpoint 永远存不成→每轮云编译都从零跑 5h。加 || true
+          # 让撲空只是得到空字符串,继续打包。KEEP_INIT 同理。
           KEEP_BUILD=$(ls -d "${BUILD_DIR}build/glibc-"* "${BUILD_DIR}build/icu-"* \
             "${BUILD_DIR}build/busybox-"* "${BUILD_DIR}build/gcc-"* "${BUILD_DIR}build/util-linux-"* \
             "${BUILD_DIR}build/e2fsprogs-"* "${BUILD_DIR}build/dosfstools-"* "${BUILD_DIR}build/splash-image-"* \
-            "${BUILD_DIR}build/terminus-font-"* "${BUILD_DIR}build/bkeymaps-"* "${BUILD_DIR}build/initramfs-"* 2>/dev/null)
+            "${BUILD_DIR}build/terminus-font-"* "${BUILD_DIR}build/bkeymaps-"* "${BUILD_DIR}build/initramfs-"* 2>/dev/null || true)
           # ★2026-07-12 根治花屏(真根因)★:必须一起保存 install_init/(initramfs 各包的 init 装配
           # 产物)。之前只存 .stamps 不存 install_init → 还原后 build_init 标记在=以为装好而跳过,
           # 但 install_init/<pkg>/ 内容没了 → initramfs 缺 glibc(libc.so.6)等 → 花屏。install_init
           # 不大(就是 initramfs 内容),存它最省事、最稳。
-          KEEP_INIT=$(ls -d "${BUILD_DIR}install_init" 2>/dev/null)
+          KEEP_INIT=$(ls -d "${BUILD_DIR}install_init" 2>/dev/null || true)
           echo "打包接力状态(工具链+已装套件+进度标记+glibc/icu build+install_init)到大容量分区..."
           df -h "${{ github.workspace }}"
           if ! tar -I 'zstd -T0 -3' -cf "${STATE_FILE}" \
