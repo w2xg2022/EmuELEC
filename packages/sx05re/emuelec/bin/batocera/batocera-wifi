@@ -42,9 +42,73 @@ do_scanlist() {
 
 # 之前 EmuELEC 的 batocera-wifi 没有 enable/disable, 导致 ES 的「启用 WIFI」是空操作。
 # 补上: rfkill 解除软阻塞 + connman 打开/关闭 wifi technology。
+# ★2026-07-20 修真bug★: es4all 侧 ApiSystem::enableWifi(ssid,key) 调用的是
+# `batocera-wifi enable "$ssid" "$key"`(见 GuiMenu.cpp 的网络设置页面)——期待
+# enable 顺便把这个网络"连上", 不只是打开无线电。但(1)旧版这里连 $1/$2 都没转发
+# 进来(下方 case 分支呼叫 do_enable 时漏掉了参数)(2)就算收到 ssid/key 也只是
+# 开电台, 从没叫 connmanctl connect。结果: 用户在 ES 网络设置输入 SSID+密码,
+# 存档时密码确实被写进了 connman 的 config(见下方 write_config, 沿用
+# batocera-config wifi enable 的既有格式/路径, 跟它保持一致方便共用同一份缓存),
+# 但没人叫 connect, 服务停在 idle, "启用WIFI"变成空操作的原版 bug 换了个形式
+# 复发。实机验证: 手动补一句 `connmanctl connect <service>` 立即成功连上
+# (Connected wifi_...), 证实密码/配置都对, 缺的就是这一步。
+write_wifi_config() {
+    local ssid="$1" psk="$2"
+    mkdir -p /storage/.cache/connman || return 1
+    {
+        echo "[global]"
+        echo "Name=emuelec"
+        echo
+        echo "[service_emuelec_default]"
+        echo "Type=wifi"
+        echo "Name=${ssid}"
+        [ -n "${psk}" ] && echo "Passphrase=${psk}"
+    } > /storage/.cache/connman/emuelec_wifi.config
+}
+
+# 用 SSID 在 connman 服务列表里找对应的 service id。
+# ★踩坑★: services 输出是「旗标 + 名字 + 空白填充 + service_id」, 旗标宽度不定
+# (已连的 "*AO"、已存的 "*A "、没存过的 "   "), 所以不能用固定几个空格去 grep
+# 名字 —— 前缀重叠的 SSID(2XL_AP2 vs 2XL_AP)会一起命中, 抓到错的那条。
+# 正确做法: service_id 恒为行尾最后一个字段, 名字是把行首 4 字元旗标区切掉、
+# 再去掉行尾 service_id 之后剩下的部分, 两边 trim 后跟 ssid 做【全等】比较。
+find_wifi_service() {
+    connmanctl services 2>/dev/null | awk -v want="$1" '
+        {
+            id=$NF
+            line=substr($0,5)
+            sub(/[ \t]*[^ \t]+[ \t]*$/,"",line)
+            gsub(/^[ \t]+|[ \t]+$/,"",line)
+            if (line==want) { print id; exit }
+        }'
+}
+
 do_enable() {
+    local ssid="$1" psk="$2"
     rfkill unblock wifi 2>/dev/null
     connmanctl enable wifi >/dev/null 2>/dev/null
+
+    [ -z "${ssid}" ] && return 0   # 不带参数的 enable = 只开无线电(向后兼容)
+
+    write_wifi_config "${ssid}" "${psk}"
+    timeout "${SCAN_TIMEOUT}" connmanctl scan wifi >/dev/null 2>/dev/null
+
+    local svc
+    svc=$(find_wifi_service "${ssid}")
+    [ -z "${svc}" ] && return 1
+
+    if [ -n "${psk}" ]; then
+        # 用 connmanctl 内建 agent 把密码喂给 connect 流程 —— 涵盖 connman 尚未
+        # 缓存过这个网络密码的情况(刚写的 config 通常已经让它免问, 这里是双保险,
+        # 多喂一行 stdin 对已经连上的情形无害)。
+        # ★踩坑★: `agent on` 是异步的, "Agent registered" 会晚于紧接着送出的
+        # connect 才出现。sleep 太短会让 agent 还没就绪就 connect, 全新网络
+        # (密码未缓存)必然失败, 只有已缓存的才"看起来正常"。故多等再送。
+        { printf 'agent on\n'; sleep 3; printf 'connect %s\n' "${svc}"; sleep 2; printf '%s\n' "${psk}"; sleep 8; printf 'quit\n'; } \
+            | timeout 25 connmanctl >/dev/null 2>&1
+    else
+        timeout 15 connmanctl connect "${svc}" >/dev/null 2>&1
+    fi
 }
 
 do_disable() {
@@ -59,7 +123,7 @@ case "${ACTION}" in
 	do_scanlist
 	;;
     "enable")
-	do_enable
+	do_enable "$1" "$2"
 	;;
     "disable")
 	do_disable

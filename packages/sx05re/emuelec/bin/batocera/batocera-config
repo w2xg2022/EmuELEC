@@ -100,8 +100,53 @@ EOF
 		echo "Passphrase=${psk}" >> "/storage/.cache/connman/emuelec_wifi.config"
 	    fi
 
-	    connmanctl enable wifi || exit 1
-	    connmanctl scan   wifi || exit 1
+	    # ★2026-07-20 修真bug★: 必须先 rfkill unblock。`connmanctl disable wifi`
+	    # (走 disable 分支时)会让内核对 phy0 下 rfkill soft block; 之后再 enable,
+	    # connmanctl 只会回一句 "wifi is already enabled" —— 它认为自己的
+	    # technology 已启用, 但 rfkill 那层还挡着, 结果 Powered 仍是 False、
+	    # wlan0 起不来、扫不到任何网络、connmanctl services 里 wifi 条目全消失。
+	    # 表现就是"接着网线时 ES 的 WIFI 功能一堆问题、拔掉网线才正常"(用户实测)。
+	    # 实机验证: 单独补一句 rfkill unblock wifi 立刻恢复(Powered=True、wlan0 UP、
+	    # 服务列表重新出现)。
+	    rfkill unblock wifi 2>/dev/null
+	    connmanctl enable wifi >/dev/null 2>&1
+	    timeout "${WIFI_SCAN_TIMEOUT:-5}" connmanctl scan wifi >/dev/null 2>&1
+
+	    # ★2026-07-20 修真bug★: 原本只写 config + scan 就 exit 0, 从没叫过
+	    # `connmanctl connect` —— 服务一直停在 State=idle, wlan0 拿不到 IP,
+	    # ES 的「WIFI IP 地址」永远显示未连接(getWifiIpAddress 是直接查 wlan0
+	    # 网卡上有没有 IPv4, 没连上自然是空)。补上找 service + connect。
+	    if [ -n "${ssid}" ]; then
+		# ★踩坑★: services 输出是「旗标 + 名字 + 空白填充 + service_id」,
+		# 旗标宽度不定(已连的 "*AO"、已存的 "*A "、没存过的 "   "), 所以不能用
+		# 固定几个空格去 grep 名字(会同时命中 2XL_AP2 和 2XL_AP 这种前缀重叠的,
+		# 抓到错的那条)。正确做法: service_id 恒为行尾最后一个字段, 名字是把
+		# 行首 4 字元旗标区切掉、再去掉行尾 service_id 之后剩下的部分, 两边
+		# trim 空白后跟 ssid 做【全等】比较。
+		svc=$(connmanctl services 2>/dev/null | awk -v want="${ssid}" '
+		    {
+			id=$NF
+			line=substr($0,5)                          # 切掉旗标区
+			sub(/[ \t]*[^ \t]+[ \t]*$/,"",line)        # 去掉行尾 service_id
+			gsub(/^[ \t]+|[ \t]+$/,"",line)            # trim
+			if (line==want) { print id; exit }
+		    }')
+		if [ -n "${svc}" ]; then
+		    if [ -n "${psk}" ]; then
+			# 用 connmanctl 内建 agent 喂密码, 涵盖 connman 还没缓存过这个
+			# 网络密码的情况(刚写的 config 通常已让它免问, 这里是双保险)。
+			# ★踩坑★: `agent on` 是异步的 —— 实测输出里 "Agent registered"
+			# 会晚于紧接着送出的 connect 才出现。若只 sleep 1 就送 connect,
+			# agent 还没注册好, connman 要密码时没人应答, 全新网络(密码没被
+			# 缓存过)必然连不上; 只有密码已缓存的情况才会"看起来正常"。
+			# 故: agent on 后多等 2s 确保注册完成, 再送 connect, 之后再喂密码。
+			{ printf 'agent on\n'; sleep 3; printf 'connect %s\n' "${svc}"; sleep 2; printf '%s\n' "${psk}"; sleep 8; printf 'quit\n'; } \
+			    | timeout 25 connmanctl >/dev/null 2>&1
+		    else
+			timeout 15 connmanctl connect "${svc}" >/dev/null 2>&1
+		    fi
+		fi
+	    fi
             exit 0
         fi
   	if [[ "$mode" =~ "start" ]]; then
@@ -111,8 +156,9 @@ EOF
                     exit 1
                 fi
             fi
+	    rfkill unblock wifi 2>/dev/null   # 同上: 上次 disable 留下的 soft block 要先解
 	    connmanctl enable wifi || exit 1
-	    connmanctl scan   wifi || exit 1
+	    timeout "${WIFI_SCAN_TIMEOUT:-5}" connmanctl scan wifi >/dev/null 2>&1
 	    exit 0
         fi
         if [[ "$mode" == "disable" ]]; then

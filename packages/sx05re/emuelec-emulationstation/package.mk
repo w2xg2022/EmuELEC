@@ -6,7 +6,7 @@
 # 布局侦测基础上又拆了游戏内AB/XY互换为两颗独立开关、补齐布局侦测精灵简繁翻译、
 # 摇杆按下文案统一)，而非 es4all/dist/emuelec 里 pin 的旧值。
 PKG_NAME="emuelec-emulationstation"
-PKG_VERSION="b65afc8c502c6208aa4b72b81f3abce669ba65c6"
+PKG_VERSION="eedbcceb2b5ac170c1ac410a20c146c322f84648"
 PKG_GIT_CLONE_BRANCH="v1.1-dev"
 PKG_REV="1"
 PKG_ARCH="any"
@@ -50,7 +50,14 @@ pre_configure_target() {
 # 已全部内建进 es4all 源码，故移除，避免重复插入导致选单出现两个相同开关。
 
 
-PKG_CMAKE_OPTS_TARGET=" -DES4ALL_TARGET=emuelec -DENABLE_EMUELEC=1 -DDISABLE_KODI=1 -DENABLE_FILEMANAGER=1 -DGLES2=1 -DENABLE_TTS=1"
+# ★2026-07-20 修真bug★: 没传 ES4ALL_BUILD_SHA 给 cmake 时(CMakeLists.txt 里
+# `#define ES4ALL_BUILD_SHA ""`), Es4allUpdate::isNewer() 的"同版本号靠构建
+# 指纹区分是否已是最新"逻辑(installedSha="" 永远 != 官方 release 的非空 candSha)
+# 会让"1.1pre"这个预览版永远显示有更新可用 —— 不管我们实际 pin 到多新的 commit
+# 都一样,因为运行中的二进位从没告诉更新器自己是从哪个 commit 编的。传入
+# PKG_VERSION(=我们 pin 的 es4all commit 完整 SHA)让 getInstalledSha() 与之匹配,
+# 更新器才能正确判断"已经是最新预览版,不用再提示"。
+PKG_CMAKE_OPTS_TARGET=" -DES4ALL_TARGET=emuelec -DENABLE_EMUELEC=1 -DDISABLE_KODI=1 -DENABLE_FILEMANAGER=1 -DGLES2=1 -DENABLE_TTS=1 -DES4ALL_BUILD_SHA=${PKG_VERSION}"
 
 # Read api_keys.txt if it exist to add the required keys for cheevos, thegamesdb and screenscrapper. You need to get your own API keys.
 # File should be in this format
