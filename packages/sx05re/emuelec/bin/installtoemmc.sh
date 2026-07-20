@@ -266,6 +266,13 @@ cat <<EOF
  The stock Android u-boot's cfgloademmc fallback will detect
  ${CE_FLASH_LABEL} / ${CE_STORAGE_LABEL} on eMMC and boot EmuELEC from there.
 
+ IMPORTANT: this bootloader always tries SD, then USB, before eMMC -
+ on EVERY power-on, not just this first one. As long as a bootable
+ SD/USB is plugged in, it will ALWAYS boot from there instead of
+ eMMC. A software reboot (from the EmulationStation menu or the
+ "reboot" command) does not eject it for you - you must physically
+ remove the SD/USB each time you want to boot from eMMC.
+
  If it does not boot, re-insert the SD/USB (untouched by this
  script) to fall back to the SD/USB installation and report it.
 ================================================================

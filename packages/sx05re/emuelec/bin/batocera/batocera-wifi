@@ -7,7 +7,13 @@ shift
 # 而 batocera-wifi scanlist 被 ES 同步调用 -> 整个 UI 冻结。这里给扫描加 timeout
 # 护栏(distro 侧兜底,与 es4all 前端的异步/超时保护互补):扫描慢就返回已知列表,
 # 绝不无限阻塞。SCAN_TIMEOUT 可用环境变量覆盖。
-SCAN_TIMEOUT="${WIFI_SCAN_TIMEOUT:-10}"
+# ★2026-07-20 修真bug★: es4all 侧(ApiSystem::getWifiNetworks)自己也包了一层
+# `timeout 8 batocera-wifi scanlist`。旧默认值 10 比外层的 8 还长 —— connman
+# 扫描卡住时, 本脚本还在内部等到 10s 才会跑 do_list 印结果, 但 ES 的外层 timeout
+# 早在 8s 就把整个进程砍了, do_list 根本没机会跑到, ES 拿到空输出, UI 显示"找不
+# 到可用的WIFI网络"(即使 connman 服务列表里其实已经有网络)。改成 5, 留够余裕让
+# do_list 在 ES 的 8s 期限内跑完并把已知列表印出来。
+SCAN_TIMEOUT="${WIFI_SCAN_TIMEOUT:-5}"
 
 do_help() {
     echo "${1} scanlist" >&2

@@ -50,6 +50,15 @@ fi
 
 装完 eMMC 一切正常：ES、蓝牙（[[docs/vm-build-bluetooth.md]] 的 hci_aml）、WiFi（aml_w1）、乙太、26GB storage 全在（蓝牙的 `/storage/bt-*` 也随 `/storage` 一起搬过去）。
 
+## 3.1 E900V22C 具体细节
+| 项 | 值 |
+|---|---|
+| CE_FLASH（boot） | `/dev/system`（工厂 system 分区，1GB）→ FAT32 |
+| CE_STORAGE（数据） | `/dev/data`（工厂 data 分区，5.4GB）→ ext4 |
+| 大小防呆 | system 900–1100MB、data ≥4000MB，超出范围拒跑 |
+
+跟 X98mini 不同：这台 8GB eMMC 只有一个够大的工厂分区（`data`），没有 Android `super` 动态分区，不需要 `teardown_android_super()`。`system` 只有 1GB，完整版固件的 SYSTEM 塞不下——EmuELEC 默认构建（`EMMC_SLIM=yes`，见 `packages/sx05re/emuelec/package.mk`）已经把 SYSTEM 压到能塞进去，装前脚本会自动检查大小，塞不下会直接拒绝并说明原因，不会走到一半才失败。
+
 ## 4. 加一个新机型
 在脚本的 `board_config()` 里加一条 case，并把机型名加进 `BOARDS`：
 ```sh
@@ -89,7 +98,19 @@ board_config() {
 4. **开不了机就把 SD/U 盘插回去**照旧从卡启动（脚本没动卡）。
 5. 想彻底恢复 Android / 重来：用 USB Burning Tool 重刷原厂固件。
 
-## 7. 相关文件
+## 7. 常见问题
+
+**装完 eMMC 后，重启（ES 菜单或 `reboot` 命令）却还是回到 SD/U 盘的系统，进不了 eMMC？**
+
+这是设计上的固定行为，不是 bug：`aml_autoscript.src` 的 `bootcmd` 每次开机都按 `bootfromsd → bootfromusb → bootfromemmc` 的**固定顺序**依次尝试，SD/U 盘只要还插着且能开机，就永远会在到达 eMMC 那一步之前就已经成功——这是刻意设计的安全网（装错/装坏 eMMC 时插回 SD/U 盘还能救），代价是**只要 SD/U 盘插着，就没有办法开进 eMMC**。
+
+单纯软件重启（ES 菜单的重启、`reboot` 命令）**不会**帮你把 SD/U 盘拔掉，所以：
+- 要开进 eMMC → **关机，物理拔掉 SD/U 盘，再通电**。这一步不是装完 eMMC 后做一次就好，**之后每次想用 eMMC 开机都要这样做**。
+- 想改用 SD/U 盘 → 插回去，随时都能立刻夺回开机权（这条方向反而不受软重启限制，SD/U 盘一插上电就走它）。
+
+如果你的场景是"eMMC 装完想马上验证"：先 `poweroff`，确认 SD/U 盘已经物理拔出，再通电。用带屏幕/HDMI 直接看开机过程最保险；纯远程操作容易忽略"插着卡"这件事。
+
+## 8. 相关文件
 - 脚本：`packages/sx05re/emuelec/bin/installtoemmc.sh`
 - cfgload 源码：`projects/Amlogic-ce/devices/Amlogic-no/bootloader/scripts/Generic_cfgload.src`
 - 原厂 autoscript（含 `cfgloademmc`）：`projects/Amlogic-ce/devices/Amlogic-no/bootloader/scripts/aml_autoscript.src`
