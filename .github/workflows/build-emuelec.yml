@@ -286,8 +286,15 @@ jobs:
             #   ② 15 个 kernel lane 包(linux 在 packages/ 共用树,①抓不到,须显式列);
             #   ③ bootloader/dtb 的 glob 保险(bl301 的 PKG_NAME 含变量 ${...},靠名字抓不到)。
             # 保留 packages/(目标工具链+glibc+userland)——这才是省下来的大头。
-            # ⚠️ 未端到端验证(E900V22C 的 Amlogic-no 支援尚未进 main),首次实测须核对
-            #    产物的 dtb/kernel 确实是本型号的,而非来源型号的。
+            # ⚠️★仍未端到端验证★(2026-07-21 更新):本功能只在「该型号还没有自己的
+            #    build-state checkpoint」时才触发。目前 X98mini / E900V22C 两个型号的
+            #    checkpoint 都已建好,所以这段程式码在现有型号上★永远不会被执行到★,
+            #    再多跑几轮云编译也验证不到它。带进来是为了保留功能(不触发=零风险),
+            #    不代表已验证。
+            #    ★下次真的用它(加第三个新型号)时必须人工核对★:产物的 dtb/kernel 确实是
+            #    本型号的,而非来源型号的 —— 因为这个坑是★静默★的:借来的 kernel 若没被
+            #    正确作废,Build 步骤的自愈会把来源型号的好 Image.lzo 判为「完好」而沿用,
+            #    编译不报任何错,但刷上去开不了机。
             SEED="${{ github.event.inputs.seed_from }}"
             if [ -n "$SEED" ] && [ "$SEED" != "${{ matrix.model }}" ]; then
               SEED_TAG="build-state-${SEED}"
