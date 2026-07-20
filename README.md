@@ -32,8 +32,8 @@
 
 | 型号 | 芯片 | GPU | 默认志愿 | 规格 | 固件 |
 |---|---|---|---|---|---|
-| X98mini | Amlogic S905W2 (S4) | Mali-G31 | 第三（闭源 BSP + GLES） | — | [前往最新 Release 下载](https://github.com/w2xg2022/EmuELEC/releases/latest) |
-| E900V22C | Amlogic S905L3A (G12A) | Mali-G31 | 第三（闭源 BSP + GLES） | 2G+8G、2×USB2.0、100M 以太网、WiFi/蓝牙（UWE5621DS）、音源 HDMI/AV（无光纤孔）、PSP 可玩 | [前往最新 Release 下载](https://github.com/w2xg2022/EmuELEC/releases/latest) |
+| X98mini | Amlogic S905W2 (S4) | Mali-G31 | 第三（闭源 BSP + GLES） | 4G+32G、2×USB2.0、TF 卡槽、百兆以太网、WiFi（W522A）、音源 HDMI/AV | [前往最新 Release 下载](https://github.com/w2xg2022/EmuELEC/releases/latest) |
+| E900V22C | Amlogic S905L3A (G12A) | Mali-G31 | 第三（闭源 BSP + GLES） | 2G+8G、2×USB2.0、百兆以太网、WiFi/蓝牙（UWE5621DS）、音源 HDMI/AV、PSP 可玩 | [前往最新 Release 下载](https://github.com/w2xg2022/EmuELEC/releases/latest) |
 
 ## 写入 eMMC（免 U 盘开机）
 
