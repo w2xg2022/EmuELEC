@@ -32,7 +32,28 @@
 
 | 型号 | 芯片 | GPU | 默认志愿 | 固件 |
 |---|---|---|---|---|
-| X98mini | Amlogic S905W2 (S4) | Mali-G31 | 第三（闭源 BSP + GLES） | [前往最新 Release 下载（约 1.25GB）](https://github.com/w2xg2022/EmuELEC/releases/latest) |
+| X98mini | Amlogic S905W2 (S4) | Mali-G31 | 第三（闭源 BSP + GLES） | [前往最新 Release 下载](https://github.com/w2xg2022/EmuELEC/releases/latest) |
+| E900V22C | Amlogic S905L3A (G12A) | Mali-G31 | 第三（闭源 BSP + GLES） | [前往最新 Release 下载](https://github.com/w2xg2022/EmuELEC/releases/latest) |
+
+### E900V22C 补充说明
+
+| 项 | 值 |
+|---|---|
+| 内存 / eMMC | 2GB / 8GB |
+| USB | 2 × USB 2.0 |
+| 以太网 | 100M |
+| WiFi / 蓝牙 | 展讯 UWE5621DS，已适配可用 |
+| 音源 | HDMI / AV（实听确认，**无光纤孔**） |
+| PSP (PPSSPP) | 可玩 |
+
+**写入 eMMC**：支持，实机验证通过，见 [docs/emmc-install.md](docs/emmc-install.md)。
+两点注意：
+
+1. 该机 eMMC 的 boot 分区只有 1GB，固件默认已瘦身到塞得下（详见
+   `packages/sx05re/emuelec/package.mk` 的 `SLIM_EXCLUDE`）。
+2. **装完 eMMC 后，每次想从 eMMC 开机都要物理拔掉 U 盘**。bootloader 每次开机固定按
+   SD → USB → eMMC 顺序尝试，U 盘只要插着就永远优先（这是刻意保留的安全网，装坏了插回
+   U 盘就能救），软件重启不会帮你拔卡。
 
 ## 云编译
 
