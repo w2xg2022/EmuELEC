@@ -1,61 +1,217 @@
 #!/bin/bash
+# es4all EMUELEC 蓝牙垫片
+# -----------------------------------------------------------------------------
+# ES(batocera 血统)统一调用 `batocera-bluetooth <verb>`。配对 GUI(GuiBluetoothPair)用
+# `live_devices` 流式接收扫描到的设备(每行 <device id=".." name=".." status=".." type=".."/>),
+# 选中后用 `trust <mac>` 配对。但 EmuELEC 自带的 /usr/bin/batocera/batocera-bluetooth 只有
+# list/trust(跑 Python dialog 互动工具)/remove, 【没有 live_devices】→ ES 扫描卡住、配不上。
+#
+# 本垫片用 bluetoothctl 直接实作 ES 需要的动词, 让 ES 原生扫描+配对 GUI 在 EmuELEC 上可用。
+# 部署: 覆盖 /usr/bin/batocera/batocera-bluetooth(bind-mount 或烤进镜像)。与 ROCKNIX 的
+# batocera-bluetooth 垫片同定位(命令边界=batocera-bluetooth, ES 与发行版解耦)。
+# -----------------------------------------------------------------------------
 
-. /etc/profile
+. /etc/profile 2>/dev/null
 
-ACTION=$1
-shift
+BTCTL=/usr/bin/bluetoothctl
+LOGF=/emuelec/logs/bluetooth.log
+SCANFLAG=/tmp/es4all-bt-scanning
+MACRE='([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}'
 
-do_help() {
-    echo "${1} list" >&2
-    echo "${1} trust" >&2
-    echo "${1} remove <device address>" >&2
+btctl() { printf '%b\n' "$1" | "$BTCTL" >> "$LOGF" 2>&1; }
+
+ensure_agent() {
+    rfkill unblock bluetooth 2>/dev/null
+    btctl "power on\nagent on\ndefault-agent\npairable on"
 }
 
-do_list() {
-    find /storage/.cache/bluetooth -type f -name info |
-	while read FILE
-	do
-	    if grep -qE '^Trusted=true$' "${FILE}"
-	    then
-		DEVNAME=$(grep -E '^Name=' "${FILE}" | sed -e s+"^Name="++)
-		DEVADDR=$(basename $(dirname "${FILE}"))
-		echo "${DEVADDR} ${DEVNAME}"
-	    fi
-	done
+emit_device() {   # mac name status
+    local mac="$1" name="$2" status="$3"
+    [ -z "$name" ] && name="$mac"
+    printf '<device id="%s" name="%s" status="%s" type="joystick" />\n' "$mac" "$name" "$status"
 }
 
-do_remove() {
-    DEV="${1}"
-    # output is never nice
-    if ! (echo "untrust ${DEV}" ; echo "remove ${DEV}") | /usr/bin/bluetoothctl >> /emuelec/logs/bluetooth.log 2>&1
-    then
-	return 1
+# ★2026-07-20 修真bug★: es4all 侧「PAIR BLUETOOTH PADS AUTOMATICALLY」(自动配对)
+# 呼叫的是 `batocera-bluetooth trust input`(见 GuiControllersSettings.cpp 的
+# addEntry -> ThreadedBluetooth::start -> ApiSystem::scanNewBluetooth, 实作在
+# ApiSystem.cpp:681 `executeScript("batocera-bluetooth trust input", func)`),
+# 不是 `trust <mac>`。旧版垫片没有这个模式, 落进下面的单MAC分支把字符串"input"
+# 当成MAC去配, 当然配不上, 表现就是"自动配对"按了没反应。
+# 语义: 扫描一段时间, 把扫到的【输入类设备】(键鼠手柄, BlueZ 的 Icon 属性会是
+# input-*)全部自动 pair+trust+connect, 不需要使用者从列表挑。跟单MAC分支同样的
+# 约束: 必须全程在【同一个 bluetoothctl 会话】里做(分开的短命实例会让 agent 不
+# 持久、新扫到的设备对新实例是 not available)。用具名管道(FIFO)撑住一个长驻
+# session 的 stdin, 边监听边即时把新发现的输入设备的 pair/trust/connect 命令
+# 写进同一个 session。
+do_trust_input() {
+    rfkill unblock bluetooth 2>/dev/null
+    local dur="${BT_AUTOPAIR_SECONDS:-25}"
+    local fifo="/tmp/es4all-bt-autopair-fifo"
+    rm -f "$fifo"; mkfifo "$fifo"
+    # ★踩坑★: `exec N>fifo` 打开写端会阻塞到有读端打开为止。必须先在背景启动
+    # 读端(bluetoothctl < fifo), 再打开写端, 否则两边都在等对方先开、直接死锁
+    # (卡满全部 timeout, 无任何进程可见 —— 因为读端那行代码根本没机会被执行到)。
+    stdbuf -oL "$BTCTL" < "$fifo" >> "$LOGF" 2>&1 &
+    local btpid=$!
+    exec 9>"$fifo"   # 保持 fifo 写端常开, session 才不会因为每次写完就 EOF 而退出
+    printf 'power on\nagent NoInputNoOutput\ndefault-agent\nscan on\n' >&9
+
+    local end=$(( $(date +%s) + dur ))
+    # tried = 这次运行内实际动过手(配对或重连)的设备, 用于结尾判断本次是否真的
+    # 成功。已经 Paired+Connected 的(真的没事可做)记进 skipped, 不计入成功判定,
+    # 免得把「早就连着的旧设备」算成这次的功劳、永远回报成功。
+    local tried="" skipped="" any=1 mac info
+    while [ "$(date +%s)" -lt "$end" ] && kill -0 "$btpid" 2>/dev/null; do
+        for mac in $("$BTCTL" devices 2>/dev/null | awk '{print $2}'); do
+            printf '%s' "$mac" | grep -qiE "^$MACRE$" || continue
+            case " $tried " in *" $mac "*) continue ;; esac
+            case " $skipped " in *" $mac "*) continue ;; esac
+            info=$("$BTCTL" info "$mac" 2>/dev/null)
+            # 只处理输入类设备(键盘/鼠标/手柄), BlueZ 用 Icon 属性标注 input-*
+            echo "$info" | grep -qi 'Icon: input-' || { skipped="$skipped $mac"; continue; }
+
+            if echo "$info" | grep -q 'Paired: yes'; then
+                # ★2026-07-20 修真bug★: 已配对的设备【不能直接跳过】。手柄关机/
+                # 超时后常常是 Paired:yes + Trusted:yes 但 Connected:no —— 这时
+                # 使用者按「自动配对」的意图就是"把它接回来"。旧逻辑把所有
+                # Paired:yes 一律 continue, 导致对这种(最常见的)情况完全没反应,
+                # 表面上看就像"自动配对没用/没在扫描"。实机确认 Pro Controller
+                # 正是这个状态。改成: 已配对但未连线 -> 直接 connect; 两者都已
+                # 满足才是真的没事可做。
+                echo "$info" | grep -q 'Connected: yes' && { skipped="$skipped $mac"; continue; }
+                tried="$tried $mac"
+                printf 'connect %s\n' "$mac" >&9; sleep 5
+
+                # ★2026-07-20 实机根因★: Paired:yes 只代表【我们这端】还存着
+                # LinkKey, 不代表对方还认。Switch Pro Controller(以及多数手柄)跟
+                # 别的主机配对过之后, 自己那端就把旧 key 忘了 —— 我们再 connect,
+                # 对方根本不应答, 内核回 `connect failed (status 0x04)`(Page
+                # Timeout) + `br-connection-create-socket`。实机确认: 手柄 RSSI
+                # -34(就在旁边、开着机、在广播), 但 connect 必失败, 卡在这里就是
+                # "自动配对按了没反应"的最后一哩。
+                # 解: connect 失败 -> 判定本地 LinkKey 已失效 -> remove 掉重新
+                # pair(此时手柄需在配对模式, 即按住 SYNC 键)。remove 后设备会从
+                # devices 列表消失, 靠扫描重新发现, 所以从 tried 拿掉让下一轮
+                # 循环当成"没配对过的新设备"走完整 pair 流程。
+                sleep 2
+                if ! "$BTCTL" info "$mac" 2>/dev/null | grep -q 'Connected: yes'; then
+                    printf 'remove %s\n' "$mac" >&9; sleep 3
+                    tried=$(printf '%s' "$tried" | sed "s| *$mac||")
+                fi
+                continue
+            fi
+
+            tried="$tried $mac"
+            printf 'pair %s\n' "$mac" >&9;    sleep 6
+            printf 'trust %s\n' "$mac" >&9;   sleep 1
+            printf 'connect %s\n' "$mac" >&9; sleep 3
+        done
+        sleep 1
+    done
+    printf 'scan off\nquit\n' >&9
+    sleep 1
+    exec 9>&-
+    wait "$btpid" 2>/dev/null
+
+    # 成功判定看 Connected —— 自动配对的目的是"手柄能用", 只是 Paired 但没连上
+    # 对使用者来说等于没成功(手柄仍然不能动), 不该回报成功。
+    for mac in $tried; do
+        "$BTCTL" info "$mac" 2>/dev/null | grep -q 'Connected: yes' && any=0
+    done
+    return $any
+}
+
+ACTION="$1"; shift
+
+case "$ACTION" in
+  enable)
+    ensure_agent
+    ;;
+
+  disable)
+    btctl "scan off\npower off"
+    ;;
+
+  live_devices)
+    ensure_agent
+    # 先补一遍开扫描前已知(未配对)的设备, 避免漏掉
+    "$BTCTL" devices 2>/dev/null | while read -r _ mac name; do
+        printf '%s' "$mac" | grep -qiE "^$MACRE$" && emit_device "$mac" "$name" "found"
+    done
+    # 关键: `bluetoothctl scan on`(非交互)只设置扫描就退出、不流式输出设备事件。必须让
+    # bluetoothctl 保持【交互】运行才会持续打印 [NEW]/[CHG]/[DEL] Device。用旗标档撑住 stdin:
+    # 喂 scan on 后循环 sleep 直到 stop_live_devices 删掉旗标档 → 喂 scan off/quit → 干净收尾。
+    touch "$SCANFLAG"
+    # 注: bluetoothctl 即使管道也输出 ANSI 色码(如 [<ESC>[0;92mNEW<ESC>[0m] Device ...), 且事件行
+    # 前常有 [bluetooth]# 提示前缀。busybox sed 不支持 -u(管道剥 ANSI 会破坏 live 流), 故不剥 ANSI:
+    # 用【宽松子串】匹配 NEW/CHG/DEL + Device(ANSI 夹在中间不影响子串), MAC 用 grep 抓, name 取 MAC
+    # 之后的部分(名字在行尾、无 ANSI)。逐行处理保持实时。
+    { printf 'scan on\n'; while [ -f "$SCANFLAG" ]; do sleep 1; done; printf 'scan off\nquit\n'; } \
+      | stdbuf -oL "$BTCTL" 2>/dev/null \
+      | while IFS= read -r line; do
+        case "$line" in
+          *NEW*Device*|*CHG*Device*)
+            mac=$(printf '%s' "$line" | grep -oiE "$MACRE" | head -1)
+            [ -z "$mac" ] && continue
+            name=$(printf '%s' "$line" | sed -E "s/.*$mac[[:space:]]*//")
+            # [CHG] 常是 RSSI/属性更新而非名字, 无有效名字就跳过(避免刷屏)
+            case "$name" in ""|RSSI*|ManufacturerData*|ServiceData*|TxPower*|UUIDs*|Connected*|Paired*|Trusted*|Bonded*|LegacyPairing*|ServicesResolved*|WakeAllowed*|Modalias*|AdvertisingFlags*|Alias*) continue ;; esac
+            emit_device "$mac" "$name" "found"
+            ;;
+          *DEL*Device*)
+            mac=$(printf '%s' "$line" | grep -oiE "$MACRE" | head -1)
+            [ -n "$mac" ] && emit_device "$mac" "" "removed"
+            ;;
+        esac
+    done
+    ;;
+
+  stop_live_devices)
+    rm -f "$SCANFLAG"          # 让 live_devices 的喂食循环退出 -> bluetoothctl quit -> 干净结束
+    btctl "scan off"
+    ;;
+
+  trust)
+    if [ "$1" = "input" ]; then
+        do_trust_input
+        exit $?
     fi
-    return 0
-}
+    MAC="$1"
+    rfkill unblock bluetooth 2>/dev/null
+    # 关键: 配对必须在【同一个 bluetoothctl 会话】里完成 —— 分开多个短命 bluetoothctl 会导致
+    # agent 不持久(注册完即退)+ 设备 "not available"(新实例没扫到)。故单会话内: 注册 agent
+    # (NoInputNoOutput 自动接受配对, 适合手柄无 PIN)、扫描让设备可见、pair(等完成)、trust、connect。
+    {
+      printf 'power on\n'
+      printf 'agent NoInputNoOutput\ndefault-agent\n'
+      printf 'scan on\n';        sleep 5
+      printf 'pair %s\n' "$MAC"; sleep 9
+      printf 'trust %s\n' "$MAC";   sleep 1
+      printf 'connect %s\n' "$MAC"; sleep 4
+      printf 'scan off\nquit\n'
+    } | stdbuf -oL "$BTCTL" >> "$LOGF" 2>&1
+    # 配对/连接成功任一即算成功(ES 据返回码判断)
+    "$BTCTL" info "$MAC" 2>/dev/null | grep -qE 'Paired: yes|Connected: yes'
+    ;;
 
-do_trust() {
-	local LEGACY=$(get_ee_setting ee_bluetooth_legacy.enabled)
-	if [[ "$LEGACY" == "1" ]]; then
-		emuelec-bluetooth-legacy
-	else
-		emuelec-bluetooth
-	fi
-}
+  list)
+    # 复用 EmuELEC 的 list 语义: 从 /storage/.cache/bluetooth 读已信任设备
+    find /storage/.cache/bluetooth -type f -name info 2>/dev/null | while read -r f; do
+        if grep -qE '^Trusted=true$' "$f"; then
+            n=$(grep -E '^Name=' "$f" | sed 's/^Name=//')
+            a=$(basename "$(dirname "$f")")
+            echo "$a $n"
+        fi
+    done
+    ;;
 
-case "${ACTION}" in
-    "list")
-	do_list
-	;;
-    "trust")
-	do_trust
-	;;
-    "remove")
-    do_remove "${1}" || exit 1
-	;;
-    *)
-	do_help "${0}"
-	exit 1
+  remove)     btctl "untrust $1\nremove $1" ;;
+  connect)    btctl "connect $1" ;;
+  disconnect) btctl "disconnect $1" ;;
+
+  *)
+    echo "usage: $0 {enable|disable|live_devices|stop_live_devices|trust <mac>|list|remove <mac>|connect <mac>|disconnect <mac>}" >&2
+    exit 1
+    ;;
 esac
-
 exit 0

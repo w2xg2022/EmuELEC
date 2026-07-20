@@ -94,7 +94,7 @@ teardown_android_super() {
 #
 # To add a new box: add a case entry here and append its name to BOARDS.
 # ---------------------------------------------------------------------------
-BOARDS="x98mini"
+BOARDS="x98mini e900v22c"
 
 board_config() {
     SUPER_TEARDOWN=""   # default: boards that don't reuse Android 'super'
@@ -109,6 +109,22 @@ board_config() {
         STORAGE_MIN_MB=10000
         SUPER_TEARDOWN="yes"   # FLASH_DEV is the Android 'super' dm container
         DESC="X98mini (Amlogic S905W2/S4, 32GB eMMC)"
+        ;;
+    e900v22c)
+        # Unlike the X98mini, this 8GB eMMC has only ONE factory partition big
+        # enough to be useful (data, 5.5GB). So boot and storage can't both use
+        # a large partition: system (1GB FAT) -> CE_FLASH holds SYSTEM+kernel;
+        # data (5.5GB ext4) -> CE_STORAGE is the large ROM partition (users want
+        # room for ROMs).
+        # SYSTEM must fit in the 1GB system partition. The size check below
+        # refuses to install and explains why if it won't fit.
+        # No Android 'super' dynamic partition on this board, so no teardown needed.
+        FLASH_DEV="/dev/system"
+        STORAGE_DEV="/dev/data"
+        FLASH_MIN_MB=900;   FLASH_MAX_MB=1100
+        STORAGE_MIN_MB=4000
+        SUPER_TEARDOWN=""
+        DESC="E900V22C (Amlogic S905L3A/G12A, 8GB eMMC)"
         ;;
     *)
         return 1
@@ -182,6 +198,21 @@ if [ "$STORAGE_SIZE_MB" -lt "$STORAGE_MIN_MB" ]; then
     die "Unexpected size for ${STORAGE_DEV}: ${STORAGE_SIZE_MB}MB (expected >=${STORAGE_MIN_MB}MB). Refusing - wrong device?"
 fi
 
+# The contents of /flash (SYSTEM squashfs + kernel.img) must fit on FLASH_DEV.
+# This matters most for boards like the E900V22C with a small boot partition
+# (system, 1GB). Check this up front so we refuse before touching any
+# partition, instead of failing with no-space-left mid-copy after Android has
+# already been erased.
+FLASH_NEED_MB=$(du -sm /flash 2>/dev/null | cut -f1)
+FLASH_AVAIL_MB=$(( FLASH_SIZE_MB - 16 ))   # reserve for the FAT32 table/overhead
+if [ -n "$FLASH_NEED_MB" ] && [ "$FLASH_NEED_MB" -gt "$FLASH_AVAIL_MB" ]; then
+    die "/flash needs ${FLASH_NEED_MB}MB, but ${FLASH_DEV} only has about ${FLASH_AVAIL_MB}MB available.
+Refusing to install (no partition has been touched).
+
+The firmware currently running is too large to fit on this board's boot
+partition. Re-flash your SD/USB with a current build and try again."
+fi
+
 cat <<EOF
 ================================================================
  EmuELEC eMMC dual-boot installer   --   board: ${BOARD}
@@ -234,6 +265,13 @@ cat <<EOF
  Done. Remove the SD/USB and power-cycle the device.
  The stock Android u-boot's cfgloademmc fallback will detect
  ${CE_FLASH_LABEL} / ${CE_STORAGE_LABEL} on eMMC and boot EmuELEC from there.
+
+ IMPORTANT: this bootloader always tries SD, then USB, before eMMC -
+ on EVERY power-on, not just this first one. As long as a bootable
+ SD/USB is plugged in, it will ALWAYS boot from there instead of
+ eMMC. A software reboot (from the EmulationStation menu or the
+ "reboot" command) does not eject it for you - you must physically
+ remove the SD/USB each time you want to boot from eMMC.
 
  If it does not boot, re-insert the SD/USB (untouched by this
  script) to fall back to the SD/USB installation and report it.

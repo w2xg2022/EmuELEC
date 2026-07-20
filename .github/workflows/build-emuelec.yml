@@ -48,7 +48,7 @@ jobs:
             MODELS="${{ vars.MODELS }}"
           fi
           if [ -z "$MODELS" ]; then
-            MODELS="X98mini"
+            MODELS="X98mini E900V22C"
           fi
           JSON=$(printf '%s\n' $MODELS | jq -R . | jq -s -c .)
           echo "matrix=$JSON" >> "$GITHUB_OUTPUT"
@@ -286,8 +286,15 @@ jobs:
             #   ② 15 个 kernel lane 包(linux 在 packages/ 共用树,①抓不到,须显式列);
             #   ③ bootloader/dtb 的 glob 保险(bl301 的 PKG_NAME 含变量 ${...},靠名字抓不到)。
             # 保留 packages/(目标工具链+glibc+userland)——这才是省下来的大头。
-            # ⚠️ 未端到端验证(E900V22C 的 Amlogic-no 支援尚未进 main),首次实测须核对
-            #    产物的 dtb/kernel 确实是本型号的,而非来源型号的。
+            # ⚠️★仍未端到端验证★(2026-07-21 更新):本功能只在「该型号还没有自己的
+            #    build-state checkpoint」时才触发。目前 X98mini / E900V22C 两个型号的
+            #    checkpoint 都已建好,所以这段程式码在现有型号上★永远不会被执行到★,
+            #    再多跑几轮云编译也验证不到它。带进来是为了保留功能(不触发=零风险),
+            #    不代表已验证。
+            #    ★下次真的用它(加第三个新型号)时必须人工核对★:产物的 dtb/kernel 确实是
+            #    本型号的,而非来源型号的 —— 因为这个坑是★静默★的:借来的 kernel 若没被
+            #    正确作废,Build 步骤的自愈会把来源型号的好 Image.lzo 判为「完好」而沿用,
+            #    编译不报任何错,但刷上去开不了机。
             SEED="${{ github.event.inputs.seed_from }}"
             if [ -n "$SEED" ] && [ "$SEED" != "${{ matrix.model }}" ]; then
               SEED_TAG="build-state-${SEED}"
@@ -614,15 +621,20 @@ jobs:
               -exec rm -rf {} + 2>/dev/null || true
           fi
           # 收集要保留的build目录(glibc/icu + initramfs相关包，可能不存在，用glob展开)
+          # ★2026-07-20 修: 结尾必须 `|| true`。EmuELEC 建置系统编完一个包就删掉它的
+          # build/<pkg>(省空间),所以存档时这些 glob 很可能全部撲空,ls 回 exit 2。步骤是
+          # `bash -eo pipefail`,command-substitution 里 ls 失败会触发 set -e 直接中止整个
+          # 存档步骤(死在打包前)→checkpoint 永远存不成→每轮云编译都从零跑 5h。加 || true
+          # 让撲空只是得到空字符串,继续打包。KEEP_INIT 同理。
           KEEP_BUILD=$(ls -d "${BUILD_DIR}build/glibc-"* "${BUILD_DIR}build/icu-"* \
             "${BUILD_DIR}build/busybox-"* "${BUILD_DIR}build/gcc-"* "${BUILD_DIR}build/util-linux-"* \
             "${BUILD_DIR}build/e2fsprogs-"* "${BUILD_DIR}build/dosfstools-"* "${BUILD_DIR}build/splash-image-"* \
-            "${BUILD_DIR}build/terminus-font-"* "${BUILD_DIR}build/bkeymaps-"* "${BUILD_DIR}build/initramfs-"* 2>/dev/null)
+            "${BUILD_DIR}build/terminus-font-"* "${BUILD_DIR}build/bkeymaps-"* "${BUILD_DIR}build/initramfs-"* 2>/dev/null || true)
           # ★2026-07-12 根治花屏(真根因)★:必须一起保存 install_init/(initramfs 各包的 init 装配
           # 产物)。之前只存 .stamps 不存 install_init → 还原后 build_init 标记在=以为装好而跳过,
           # 但 install_init/<pkg>/ 内容没了 → initramfs 缺 glibc(libc.so.6)等 → 花屏。install_init
           # 不大(就是 initramfs 内容),存它最省事、最稳。
-          KEEP_INIT=$(ls -d "${BUILD_DIR}install_init" 2>/dev/null)
+          KEEP_INIT=$(ls -d "${BUILD_DIR}install_init" 2>/dev/null || true)
           echo "打包接力状态(工具链+已装套件+进度标记+glibc/icu build+install_init)到大容量分区..."
           df -h "${{ github.workspace }}"
           if ! tar -I 'zstd -T0 -3' -cf "${STATE_FILE}" \

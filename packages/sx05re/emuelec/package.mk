@@ -80,6 +80,33 @@ if [ "${DEVICE}" == "RK356x" ] || [ "${DEVICE}" == "OdroidM1" ]; then
 	done
 fi
 
+# --- 瘦身构建: 默认从固件剔除的包清单 (EMMC_SLIM, 默认 yes) ----------------
+# 这些包默认不编进任何固件: 体积大又冷门, 为 2+8G 小盒子省空间, 也让 SYSTEM
+# 更接近能塞进 eMMC 的 1GB system 分区(见 installtoemmc.sh 的 e900v22c 分支)。
+# 想要完整版(保留这些包)编译时设 EMMC_SLIM=no。
+#
+# 扩展办法: 往 SLIM_EXCLUDE 追加包名(用 PKG_DEPENDS_TARGET 里的写法, 空格分隔)。
+# 目前清单(均为体积大+有更优替代或极冷门, 2026-07-20 用户确认):
+#   scummvm       ScummVM libretro core  (~100MB) 点击式老冒险游戏, 小众
+#   scummvmsa     ScummVM standalone     (~85MB)
+#   fbalpha2012   (~21MB) 老 FBA 核心, 已被 fbneo 取代(功能超集)
+#   amiberry-lite (~13MB) Amiga 精简版, 与 amiberry 全功能版重复
+#   puae          (~20MB) Amiga 旧核心, 与 puae2021(保留)重复
+#   same_cdi      (~36MB) Philips CD-i, 极冷门平台
+#   biginstinct   (~27MB) 只跑 Killer Instinct 单一游戏
+# 保留(用户明确要保留): mame2010(core)、standalone fbneo、virtualxt、bigpemu、puae2021。
+# 另: emuelec-emulationstation/package.mk 也用同一个 EMMC_SLIM 开关剔除 Crystal
+# 主题(280MB 未压缩, 全 SYSTEM 最大单一目录, 从未被默认使用 —— 默认主题是
+# es-theme-alekfull-EmueELEC, 见该文件的 NOTE)。
+EMMC_SLIM="${EMMC_SLIM:-yes}"
+SLIM_EXCLUDE="scummvm scummvmsa fbalpha2012 amiberry-lite puae same_cdi biginstinct"
+
+if [ "${EMMC_SLIM}" != "no" ]; then
+  for slimpkg in ${SLIM_EXCLUDE}; do
+    PKG_DEPENDS_TARGET=$(echo ${PKG_DEPENDS_TARGET} | sed "s|${slimpkg} | |g")
+  done
+fi
+
 makeinstall_target() {
 
 	mkdir -p ${INSTALL}/usr/bin

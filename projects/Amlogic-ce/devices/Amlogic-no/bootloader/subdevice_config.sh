@@ -76,6 +76,14 @@ case ${1} in
     DEVICE_CFGLOAD="Generic_cfgload"
     DEVICE_DTB="device_trees/s4_s905w2_4g.dtb"
   ;;
+  E900V22C)
+    DEVICE_CFGLOAD="Generic_cfgload"
+    # 本樹源碼編的e900專屬dtb = 通用g12a_s905x2_2g(已驗證可開機) + UWE5621DS的
+    # SDIO wifi節點(udev自動載入模組的觸發條件)。詳見patches/common_drivers/的dts patch。
+    # 註:corebian帶來的CoreELEC-22預編dtb(5.15.196)配本樹內核(5.15.153)實機黑屏，
+    # 印證vendor三件套版本必須對齊；dtb一定要用本樹源碼編的。
+    DEVICE_DTB="device_trees/g12a_s905x2_2g_e900v22c.dtb"
+  ;;
   Generic)
     DEVICE_CFGLOAD="${1}_cfgload"
   ;;

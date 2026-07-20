@@ -30,9 +30,26 @@
 
 ## 已支持/适配中型号
 
-| 型号 | 芯片 | GPU | 默认志愿 | 固件 |
-|---|---|---|---|---|
-| X98mini | Amlogic S905W2 (S4) | Mali-G31 | 第三（闭源 BSP + GLES） | [前往最新 Release 下载（约 1.25GB）](https://github.com/w2xg2022/EmuELEC/releases/latest) |
+| 型号 | 芯片 | GPU | 默认志愿 | 规格 | 固件 |
+|---|---|---|---|---|---|
+| X98mini | Amlogic S905W2 (S4) | Mali-G31 | 第三（闭源 BSP + GLES） | 4G+32G、2×USB2.0、TF 卡槽、百兆以太网、WiFi/蓝牙（W522A）、音源 HDMI/AV | [前往最新 Release 下载](https://github.com/w2xg2022/EmuELEC/releases/latest) |
+| E900V22C | Amlogic S905L3A (G12A) | Mali-G31 | 第三（闭源 BSP + GLES） | 2G+8G、2×USB2.0、百兆以太网、WiFi/蓝牙（UWE5621DS）、音源 HDMI/AV、PSP 可玩 | [前往最新 Release 下载](https://github.com/w2xg2022/EmuELEC/releases/latest) |
+
+## 写入 eMMC（免 U 盘开机）
+
+把从 U 盘运行的固件装进盒子内部 eMMC，之后不插盘也能开机。目前 X98mini、E900V22C
+均已实机验证通过。
+
+```sh
+installtoemmc.sh <型号>     # 例: installtoemmc.sh e900v22c
+installtoemmc.sh list       # 列出支持的型号
+```
+
+详细原理、分区选择、踩过的坑见 [docs/emmc-install.md](docs/emmc-install.md)。
+
+> ⚠️ **装完之后，每次想从 eMMC 开机都要物理拔掉 U 盘。** bootloader 每次开机固定按
+> SD → USB → eMMC 顺序尝试，U 盘只要插着就永远优先——这是刻意保留的安全网（eMMC 装坏了
+> 插回 U 盘就能救），代价是软件重启（ES 菜单/`reboot`）不会帮你拔卡，只会又从 U 盘起来。
 
 ## 云编译
 
