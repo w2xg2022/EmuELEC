@@ -6,7 +6,7 @@
 # 布局侦测基础上又拆了游戏内AB/XY互换为两颗独立开关、补齐布局侦测精灵简繁翻译、
 # 摇杆按下文案统一)，而非 es4all/dist/emuelec 里 pin 的旧值。
 PKG_NAME="emuelec-emulationstation"
-PKG_VERSION="0cd366ba4e585a03cf33a4e84d9ece921a4254fb"
+PKG_VERSION="b65afc8c502c6208aa4b72b81f3abce669ba65c6"
 PKG_GIT_CLONE_BRANCH="v1.1-dev"
 PKG_REV="1"
 PKG_ARCH="any"
@@ -29,7 +29,16 @@ if [[ ${DEVICE} == "OdroidM1"  ]] || [[ ${DEVICE} == "RK356x"  ]]; then
 fi
 
 # themes for Emulationstation
-PKG_DEPENDS_TARGET="${PKG_DEPENDS_TARGET} Crystal es-theme-alekfull-EmueELEC"
+# NOTE(w2xg2022): es-theme-alekfull-EmueELEC 才是实际生效的默认主题(见
+# es_settings.cfg 的 ThemeSet)。Crystal(280MB 未压缩, 全 SYSTEM 最大的单一目录)
+# 只是选单里可切换的备用主题, 从未被默认使用。EMMC_SLIM(默认yes)时不装它, 腾出
+# 空间给 E900V22C 的 1GB system 分区(见 emuelec/package.mk 的 SLIM_EXCLUDE 同一
+# 用户决定); 默认外观不受影响, 只是选单少一个可选主题。EMMC_SLIM=no 时装回。
+if [ "${EMMC_SLIM:-yes}" != "no" ]; then
+  PKG_DEPENDS_TARGET="${PKG_DEPENDS_TARGET} es-theme-alekfull-EmueELEC"
+else
+  PKG_DEPENDS_TARGET="${PKG_DEPENDS_TARGET} Crystal es-theme-alekfull-EmueELEC"
+fi
 
 pre_configure_target() {
 
