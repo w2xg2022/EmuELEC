@@ -6,7 +6,7 @@
 # 布局侦测基础上又拆了游戏内AB/XY互换为两颗独立开关、补齐布局侦测精灵简繁翻译、
 # 摇杆按下文案统一)，而非 es4all/dist/emuelec 里 pin 的旧值。
 PKG_NAME="emuelec-emulationstation"
-PKG_VERSION="eedbcceb2b5ac170c1ac410a20c146c322f84648"
+PKG_VERSION="f2660440860c8440781135f7891ac00411b19e98"
 PKG_GIT_CLONE_BRANCH="v1.1-dev"
 PKG_REV="1"
 PKG_ARCH="any"
@@ -50,14 +50,18 @@ pre_configure_target() {
 # 已全部内建进 es4all 源码，故移除，避免重复插入导致选单出现两个相同开关。
 
 
-# ★2026-07-20 修真bug★: 没传 ES4ALL_BUILD_SHA 给 cmake 时(CMakeLists.txt 里
-# `#define ES4ALL_BUILD_SHA ""`), Es4allUpdate::isNewer() 的"同版本号靠构建
-# 指纹区分是否已是最新"逻辑(installedSha="" 永远 != 官方 release 的非空 candSha)
-# 会让"1.1pre"这个预览版永远显示有更新可用 —— 不管我们实际 pin 到多新的 commit
-# 都一样,因为运行中的二进位从没告诉更新器自己是从哪个 commit 编的。传入
-# PKG_VERSION(=我们 pin 的 es4all commit 完整 SHA)让 getInstalledSha() 与之匹配,
-# 更新器才能正确判断"已经是最新预览版,不用再提示"。
-PKG_CMAKE_OPTS_TARGET=" -DES4ALL_TARGET=emuelec -DENABLE_EMUELEC=1 -DDISABLE_KODI=1 -DENABLE_FILEMANAGER=1 -DGLES2=1 -DENABLE_TTS=1 -DES4ALL_BUILD_SHA=${PKG_VERSION}"
+# ★2026-07-21★ 这里★不要★再传 -DES4ALL_BUILD_SHA。
+# 历史: 2026-07-20 曾加上它, 用来解「1.1pre 永远显示有更新可用」的假警报 —— 当时的
+# 自我更新机制是拿「编进 binary 的 commit SHA」当构建指纹, 我们没传就是空字串,
+# 空字串永远 != 官方 release 的 SHA, 于是永远提示有更新。
+# 现况: es4all 已把该机制整个改掉(见 [[es4all_self_update]] 与 es4all 的
+# CMakeLists.txt:105「不要再把 commit SHA 编进 binary」)。新指纹 = 整包内容的
+# 确定性 md5(binary+resources+locale), CI 产生 <zip>.md5, 装置在 OTA 安装时把值
+# 记进旁档 es4all-installed.md5。为此上游已移除 __DATE__/__TIME__ 与
+# -DES4ALL_BUILD_SHA —— 因为新机制的前提是★相同源码必须编出相同 binary★。
+# 所以再传这个参数不只无效, 还会把 commit SHA 编回 binary、让每次建置的 md5 都不同,
+# 反而破坏新机制、令假警报以另一种形式复活。
+PKG_CMAKE_OPTS_TARGET=" -DES4ALL_TARGET=emuelec -DENABLE_EMUELEC=1 -DDISABLE_KODI=1 -DENABLE_FILEMANAGER=1 -DGLES2=1 -DENABLE_TTS=1"
 
 # Read api_keys.txt if it exist to add the required keys for cheevos, thegamesdb and screenscrapper. You need to get your own API keys.
 # File should be in this format
