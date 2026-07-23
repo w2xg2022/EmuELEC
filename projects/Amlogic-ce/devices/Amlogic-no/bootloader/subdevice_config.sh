@@ -74,7 +74,13 @@ case ${1} in
   ;;
   X98mini)
     DEVICE_CFGLOAD="Generic_cfgload"
-    DEVICE_DTB="device_trees/s4_s905w2_4g.dtb"
+    # 本树源码编的X98mini专属dtb = 通用s4_s905w2_4g + AV(T9015)修复 + model改成机型名。
+    # 详见 patches/common_drivers/0002-x98mini-av-t9015.patch。
+    # 为何通用dtb的AV孔无声: CoreELEC的coreelec_s4_common.dtsi把厂商接好的线拆了——
+    # /delete-node/ auge_sound后整个重写成全dummy_codec、/delete-node/ tdmc后拿同一颗
+    # 硬件另建aml_i2s2hdmi去喂HDMI、又/delete-property/掉T9015的tocodec_inout与
+    # tdmout_index。专属dtb把dai-link@3(就是TDM-C)的codec接回T9015并补回那两个属性。
+    DEVICE_DTB="device_trees/s4_s905w2_4g_x98mini.dtb"
   ;;
   E900V22C)
     DEVICE_CFGLOAD="Generic_cfgload"
