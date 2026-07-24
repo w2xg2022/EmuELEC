@@ -1,0 +1,18 @@
+--- a/SDL/SDLGLGraphicsContext.cpp
++++ b/SDL/SDLGLGraphicsContext.cpp
+@@ -440,6 +440,15 @@
+ 	bool success = draw_->CreatePresets();
+ 	_assert_(success);
+ 	renderManager_->SetSwapFunction([&]() {
++#ifdef USING_FBDEV
++		// Amlogic OSD composites the framebuffer using per-pixel alpha. PPSSPP 3D output
++		// leaves alpha=0 -> OSD plane becomes transparent -> black on TV (menus render with
++		// alpha=255 so they show fine). Force the backbuffer alpha opaque before presenting.
++		glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
++		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
++		glClear(GL_COLOR_BUFFER_BIT);
++		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
++#endif
+ #ifdef USING_EGL
+ 		if (useEGLSwap)
+ 			eglSwapBuffers(g_eglDisplay, g_eglSurface);
