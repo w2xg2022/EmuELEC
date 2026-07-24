@@ -1,0 +1,26 @@
+--- a/SDL/SDLGLGraphicsContext.cpp
++++ b/SDL/SDLGLGraphicsContext.cpp
+@@ -193,11 +193,10 @@
+ 		// Let's assume that non-conformant configs aren't so awful.
+ 		int caveatScore = caveat == EGL_NONE ? 100 : (caveat == EGL_NON_CONFORMANT_CONFIG ? 95 : 0);
+ 
+-#ifndef USING_FBDEV
++		// Amlogic/Mali fbdev: still require EGL_WINDOW_BIT here. Without it a non-window
++		// config can win and eglCreateWindowSurface returns EGL_BAD_MATCH (black screen).
+ 		EGLint surfaceType = readConfig(EGL_SURFACE_TYPE);
+-		// Only try a non-Window config in the worst case when there are only non-Window configs.
+ 		int surfaceScore = (surfaceType & EGL_WINDOW_BIT) ? 1000 : 0;
+-#endif
+ 
+ 		EGLint renderable = readConfig(EGL_RENDERABLE_TYPE);
+ 		bool renderableGLES3 = (renderable & EGL_OPENGL_ES3_BIT_KHR) != 0;
+@@ -222,9 +221,7 @@
+ 		score += levelScore + samplesScore + sampleBufferScore + transparentScore;
+ 		score += caveatScore + renderableScoreGLES + renderableScoreGL;
+ 
+-#ifndef USING_FBDEV
+ 		score += surfaceScore;
+-#endif
+ 
+ 		if (score > bestScore) {
+ 			bestScore = score;
