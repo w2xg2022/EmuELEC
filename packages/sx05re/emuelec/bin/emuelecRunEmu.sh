@@ -589,7 +589,18 @@ if [ "${USELOG}" == "1" ]; then # No need to do all this if log is disabled
     eval echo ${RUNTHIS} >> ${EMUELECLOG}
 fi
 
-[[ "${KILLTHIS}" != "none" ]] && gptokeyb 1 ${KILLTHIS} ${VIRTUAL_KB} -killsignal ${KILLSIGNAL} &
+# NOTE(w2xg2022): -hotkey back 是必要的,不能靠预设。
+# gptokeyb 的退出组合 = HOTKEY + START,而它的 HOTKEY 预设是 SDL 的 "guide"。
+# guide 在 gamecontrollerdb 里对到手柄的中央键(Xbox 360 是 b8) —— 但市面上七成
+# 「Xbox 式」山寨手柄【根本没有 Guide 键】,于是那个组合永远按不出来,终端机、
+# 档案管理员与各独立模拟器全都退不出去(E900V22C 实机坐实)。
+# 改用 "back"(SDL 语意上就是 SELECT,每支手柄都有)后,一律 SELECT+START 退出,
+# 与画面上到处写的提示一致,且不必依赖 gamecontrollerdb 里 guide 对到哪一颗。
+#
+# 为什么不能改 es_input.cfg 就好:gptokeyb 不读 es_input.cfg,只读 SDL 映射表。
+# 只有跑完设定精灵时 configscripts/gamecontrollerdb.sh 才会把 hotkeyenable 翻译成
+# guide 写进映射表 —— 命中出厂名册的手柄不触发这条路径,所以出厂状态永远是坏的。
+[[ "${KILLTHIS}" != "none" ]] && gptokeyb 1 ${KILLTHIS} ${VIRTUAL_KB} -hotkey back -killsignal ${KILLSIGNAL} &
 
 [[ "${CLOUD_SYNC}" == "1" ]] && wait ${CLOUD_PID}
 
