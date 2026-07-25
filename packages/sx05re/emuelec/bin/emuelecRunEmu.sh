@@ -203,7 +203,9 @@ case ${PLATFORM} in
         fi
                ;;
         "setup")
-        if [ "${EE_DEVICE}" == "OdroidGoAdvance" ] || [ "${EE_DEVICE}" == "GameForce" ]; then
+        # 要杀的进程名必须跟 fbterm.sh 实际选用的终端机后端一致,
+        # 否则 kill 键会打空、退不出终端机。
+        if [ -x /usr/bin/kmscon ]; then
             set_kill_keys "kmscon"
         else
             set_kill_keys "fbterm"
@@ -669,6 +671,11 @@ case "${EMU}" in
         ;;
 esac
 [[ "${RETRORUN}" == "yes" ]] && ret_error=0
+
+# The setup terminal / script "emulators" (fbterm / kmscon) are quit with the
+# gptokeyb kill key, which returns 143 (128 + SIGTERM). That is the normal way
+# to exit them, not an error, so don't pop up the error log for it.
+[[ "${KILLTHIS}" == "fbterm" || "${KILLTHIS}" == "kmscon" ]] && [[ "${ret_error}" == "143" ]] && ret_error=0
 
 [[ "${CLOUD_SYNC}" == "1" ]] && wait ${CLOUD_PID}
 

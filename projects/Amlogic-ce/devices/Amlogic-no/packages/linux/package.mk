@@ -62,6 +62,20 @@ post_unpack() {
   mkdir -p ${PKG_BUILD}/.git/hooks
   mkdir -p ${PKG_BUILD}/common_drivers/.git/hooks
   cp -r $(get_build_dir common_drivers)/* ${PKG_BUILD}/common_drivers
+  # NOTE(w2xg2022): 注入本 fork 自维护的机型专属 dts —— ★真档,不用 patch★。
+  # 放在本 package 的 sources/ 下,而本 package 目录(PKG_NAME=linux)本来就在 kernel bundle
+  # 指纹的扫描范围内(hash 抓所有 PKG_NAME="linux" 的目录),所以 dts 一改云端指纹就变、自动
+  # 重编 —— 不再像旧的「patches/common_drivers/*.patch」放在 devices 层 patch 目录那样,因不在
+  # 指纹范围而被云端静默漏掉(2026-07-24 X98mini AV dtb 就是这样没进云端固件的)。
+  # 每个 sources/*.dts 拷进 common_drivers 的 amlogic dts 目录并补上 dtb-y 一行(幂等)。
+  local _dtsdir="${PKG_BUILD}/common_drivers/arch/${TARGET_KERNEL_ARCH:-arm64}/boot/dts/amlogic"
+  local _dts _name
+  for _dts in ${PKG_DIR}/sources/*.dts; do
+    [ -f "${_dts}" ] || continue
+    cp -v "${_dts}" "${_dtsdir}/"
+    _name="$(basename "${_dts}" .dts)"
+    grep -q "dtb-y += ${_name}.dtb" "${_dtsdir}/Makefile" || echo "dtb-y += ${_name}.dtb" >> "${_dtsdir}/Makefile"
+  done
   # make modules folder with version number only
   touch ${PKG_BUILD}/.scmversion
   # show correct common_drivers build info in dmesg

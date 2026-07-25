@@ -29,7 +29,11 @@ if [ "${DEVICE}" == "OdroidGoAdvance" ] || [ "${DEVICE}" == "GameForce" ]; then
 	done
 	PKG_DEPENDS_TARGET+=" yabasanshiro"
 else
-	PKG_DEPENDS_TARGET+=" fbterm"
+	# fbterm 只往 legacy fbdev 写像素,在走 SDL kmsdrm 的机型上(Amlogic S905L3A
+	# 等)那块缓冲已经不是真正被扫描输出的画面,所以 Launch Terminal / File
+	# Manager 全黑。kmscon 是 DRM/KMS 原生终端,自己做 modeset(实机验证可正常
+	# 显示),故两个都装,由 fbterm.sh 在运行期优先选 kmscon。
+	PKG_DEPENDS_TARGET+=" fbterm kmscon"
 fi
 
 # These cores do not work, or are not needed on aarch64, this package needs cleanup :) 

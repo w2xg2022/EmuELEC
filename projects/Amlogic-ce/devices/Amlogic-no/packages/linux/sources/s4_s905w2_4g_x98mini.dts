@@ -1,0 +1,80 @@
+/* SPDX-License-Identifier: (GPL-2.0+ OR MIT) */
+/*
+ * X98mini (Amlogic S905W2 / SoC 家族 S4)
+ *
+ * 目的一: 打通 AV(3.5mm) 类比音频输出。
+ * 目的二: 把 model 改成含机型名，让 audio_outputs.cfg 的白名单认得出这台。
+ *
+ * ── AV 原本为什么没声音(2026-07-23 读 dts 源码坐实) ──
+ * 驱动早就编进内核了(实机 /sys/bus/platform/drivers/ 有 aml_codec_T9015、
+ * /proc/kallsyms 有 50 个 t9015 符号)，t9015 节点在 meson-s4.dtsi 里也是
+ * status="okay" —— 问题纯粹是 CoreELEC 把厂商接好的线拆了：
+ *
+ * 1) 厂商 dts(s4_s905w2_ap201_1g.dts) 本来接得好好的：dai-link@2 =
+ *    tdmc(TDM-C) + &amlogic_codec(T9015)，suffix-name "alsaPORT-i2s"。
+ * 2) coreelec_s4_common.dtsi 做了三件事把它拆掉：
+ *    a. /delete-node/ auge_sound 后整个重写，新的 4 条 link 没有任何一条
+ *       接 amlogic_codec，全接 dummy_codec。
+ *    b. /delete-node/ tdmc; /delete-node/ tdm@2; 然后拿同一颗硬件
+ *       (compatible "amlogic, t5-snd-tdmc" + CLKID_AUDIO_MCLK_C)另建了
+ *       aml_i2s2hdmi 节点去喂 HDMI。
+ *       ★关键★: &tdmc 这个 label 在此之后已经不存在，引用它会编不过；
+ *       而 aml_i2s2hdmi 就是 TDM-C 本人 —— 实机 aplay -l 看到的
+ *       "device 3: TDM-C-dummy" 就是这颗。
+ *    c. &amlogic_codec 又被 /delete-property/ 掉 tocodec_inout 与
+ *       tdmout_index —— 这两个正是告诉 T9015「从哪条 TDM 取音源」的，
+ *       厂商值都是 2(= TDM-C)。少了它 T9015 不知道去哪拿音。
+ *
+ * ── 修法(只有两处，不新增 dai-link) ──
+ * TDM-C 硬件只有一颗、已经是 dai-link@3，所以不能也不需要再加一条：
+ *   1. 把 dai-link@3 的 codec 由 dummy_codec 换成 amlogic_codec(T9015)
+ *   2. 把被删掉的 tocodec_inout / tdmout_index 补回 <2>
+ * 预期 aplay -l 的 device 3 由 "TDM-C-dummy" 变成 "TDM-C-T9015"。
+ *
+ * ⚠️ 已知副作用: TDM-C 同时喂 HDMI 与 T9015 → HDMI 与 AV 会一起出声。
+ *    跟 E900V22C 是同一个坑，靠 ALSA 控制项 "Audio hdmi-out mute" 静音
+ *    HDMI(★用名称定址，别用 numid，numid 随内核/机型变动★)。该机没有
+ *    asound.state 也没有 alsa-restore 服务，mixer 设定重开机会掉，需自行还原。
+ *
+ * ⚠️ 尚未实机验证: 本档是静态分析(读 dts 源码)的产物。刷机后必须先
+ *    aplay -l 确认 device 3 变成 T9015、再逐一实听，才可以往
+ *    audio_outputs.cfg 加条目(该档档头写明: ALSA 列得出某个 PCM ≠ 盒子
+ *    真的有那个实体孔)。
+ */
+
+#include "s4_s905w2_4g.dts"
+
+/ {
+	/*
+	 * 原本 model 是泛用的 "Amlogic"，没办法当 audio_outputs.cfg 白名单的键
+	 * (子串比对会误中所有 Amlogic 盒)。比照 E900V22C(model = "Skyworth
+	 * E900V22C")写成含机型名，顺手解掉交接单的「待办二」。
+	 * 若只想要 AV、不想动机型识别，删掉下面这行 model 即可，两者互不相干。
+	 */
+	model = "X98mini";
+	coreelec-dt-id = "s4_s905w2_4g_x98mini";
+
+	auge_sound {
+		/*
+		 * dai-link@3 的 cpu 是 aml_i2s2hdmi，也就是 TDM-C。
+		 * 这里只覆写它的 codec，其余(format/mclk-fs/slot 设定)沿用
+		 * coreelec_s4_common.dtsi 的原值，与厂商 dai-link@2 一致
+		 * (format="i2s"、mclk-fs=256、slot-num=2、slot-width=32、
+		 *  system-clock-frequency=12288000)。
+		 */
+		aml-audio-card,dai-link@3 {
+			codec {
+				sound-dai = <&amlogic_codec>;
+			};
+		};
+	};
+};
+
+/*
+ * 补回 coreelec_s4_common.dtsi 删掉的两个路由属性。
+ * 2 = TDM-C，与厂商 dts 及 meson-s4.dtsi 的原值相同。
+ */
+&amlogic_codec {
+	tocodec_inout = <2>;
+	tdmout_index = <2>;
+};

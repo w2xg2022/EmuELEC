@@ -196,6 +196,25 @@ jobs:
               HASH_INPUT="$HASH_INPUT $(find "$d" -type f | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1)"
             done
           done
+          # ★★★ 2026-07-24 补掃:上面的 KERNEL_PKGS 循环只 grep「各包自己 package.mk 的目录」,
+          # 会漏掉两类同样会改变编译产物(kernel/dtb/driver)的东西,导致改了它们 hash 却不变、
+          # 云端命中旧 bundle → 改动静默没进固件 ★★★
+          #   ① common_drivers 套件(source-only,不在 KERNEL_PKGS)—— amlogic 全部 dts + 驱动的源;
+          #   ② device 层 patch 目录 projects/.../devices/*/patches/{common_drivers,linux} ——
+          #      套到 kernel/common_drivers 的 patch 放这里(如 e900v22c 的 dts patch)。
+          # 2026-07-24 铁证:X98mini 的 AV dts patch 放在 devices/Amlogic-no/patches/common_drivers/,
+          # 加了 patch 但 hash 不变 → 云端命中 07-17 旧 bundle、AV 没进固件(下载 bundle 验证缺 dtb)。
+          # 补掃这些目录后,任何 kernel/dtb/driver 改动都会让 hash 变、触发重编。
+          # (X98mini 的 dts 已改放 linux 包 sources/ 真档,天然被上面循环覆盖;此处兜住 e900v22c
+          #  的 dts patch、common_drivers 的 BT patch 等仍走 patch 的部分。★不动 KERNEL_PKGS 本身★
+          #  —— 那份还被 Save/Restore bundle 用来查 stamp/收 install_pkg,common_drivers 是纯源码
+          #  没有 install_pkg,加进去会让 bundle 永远存不了。故只在 hash 这里补掃。)
+          for d in $(ls -d projects/Amlogic-ce/devices/*/packages/linux-drivers/amlogic/common_drivers \
+                            projects/Amlogic-ce/devices/*/patches/common_drivers \
+                            projects/Amlogic-ce/devices/*/patches/linux 2>/dev/null | sort); do
+            [ -d "$d" ] || continue
+            HASH_INPUT="$HASH_INPUT $(find "$d" -type f | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1)"
+          done
           KERNEL_HASH=$(echo "$HASH_INPUT" | sha256sum | cut -c1-16)
           echo "KERNEL_HASH=$KERNEL_HASH" >> "$GITHUB_ENV"
           echo "本次kernel lane内容杂凑：$KERNEL_HASH（由linux+14个耦合驱动包的package.mk+patches内容决定）"

@@ -12,7 +12,13 @@ PKG_URL="https://github.com/hrydgard/ppsspp.git"
 # 確認PPSSPPSDL根本沒有直接連結libOpenGL.so(誤診)，而libglvnd會把系統的
 # libEGL.so.1/libGLESv2.so.2 symlink從Mali改指向它自己沒設定vendor config
 # 的dispatcher，導致ES/RA整個顯示初始化失敗(Could not get EGL display)。拿掉。
-PKG_DEPENDS_TARGET="toolchain ffmpeg libzip libpng SDL2 zlib zip"
+# NOTE(w2xg2022): 加SDL2_ttf freetype是为了让PPSSPP的CMake find_package(SDL2_ttf)
+# 成功、定义USE_SDL2_TTF，native UI才会走TextDrawerSDL用真字体渲染文字。没有它时
+# draw_text.cpp工厂函数在Linux会返回nullptr、退回编译进去的点阵atlas字(只有拉丁
+# 字形)，导致System>Language菜单里简体中文/繁体中文/日本語/한국어等全部显示成方框
+# (语言其实有切、翻译档zh_CN.ini也有载入，只是glyph画不出来)。搭配下方把主字体
+# Roboto-Condensed.ttf换成CJK字体即可正常显示中文等语言。
+PKG_DEPENDS_TARGET="toolchain ffmpeg libzip libpng SDL2 SDL2_ttf freetype zlib zip"
 PKG_SHORTDESC="PPSSPPDL"
 PKG_LONGDESC="PPSSPP Standalone"
 GET_HANDLER_SUPPORT="git"
@@ -63,7 +69,14 @@ makeinstall_target() {
     cp -r `find . -name "assets" | xargs echo` ${INSTALL}/usr/config/ppsspp/
     
     cp -rf ${PKG_DIR}/config/* ${INSTALL}/usr/config/ppsspp/
-    
+
+    # NOTE(w2xg2022): 启用SDL2_ttf后,TextDrawerSDL会把assets/Roboto-Condensed.ttf
+    # 当UI主字体载入。原Roboto只有拉丁字形→中日韩变方框。这里把它换成系统已内建的
+    # CJK字体(retroarch包装的/usr/share/retroarch-cjk-font/font.ttf,含简繁日韩),
+    # 让PSP独立模拟器菜单支持中文等语言。此路径image必有(retroarch一定在)。做法比照
+    # ROCKNIX ppsspp-sa(ln NotoSansJP→Roboto-Condensed.ttf),不必自带字体档。
+    ln -sf /usr/share/retroarch-cjk-font/font.ttf ${INSTALL}/usr/config/ppsspp/assets/Roboto-Condensed.ttf
+
     rm ${INSTALL}/usr/config/ppsspp/assets/gamecontrollerdb.txt
     ln -sf /storage/.config/SDL-GameControllerDB/gamecontrollerdb.txt ${INSTALL}/usr/config/ppsspp/assets/gamecontrollerdb.txt
     
