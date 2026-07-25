@@ -161,6 +161,16 @@ post_install() {
   enable_service emuelec-shutdown.service
 
 
+  # 移除已失效的 setup 脚本(对应功能已拿掉)
+  for i in "youtube_search" "scan_scummVM_games"; do
+    xmlstarlet ed -L -P -d "/gameList/game[path='./${i}.sh']" ${INSTALL}/usr/bin/scripts/setup/gamelist.xml
+    rm -f "${INSTALL}/usr/bin/scripts/setup/${i}.sh"
+  done
+  rm -f "${INSTALL}/usr/bin/scripts/setup/setup_images/youtube.png"
+  # youtube/twitch 播放需要 youtube-dl，已不编进固件，垫图一并移除
+  rm -f "${INSTALL}/usr/config/splash/youtube-1080.png"
+  rm -f "${INSTALL}/usr/config/splash/twitch-1080.png"
+
   # Remove scripts from OdroidGoAdvance build
   if [[ ${DEVICE} == "OdroidGoAdvance" || "${DEVICE}" == "GameForce" ]]; then 
     for i in "wifi" "sselphs_scraper" "skyscraper" "system_info"; do 

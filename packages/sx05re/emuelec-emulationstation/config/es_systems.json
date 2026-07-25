@@ -1426,13 +1426,11 @@
         ".sh",
         ".swf",
         ".ts",
-        ".twi",
         ".vob",
         ".wav",
         ".webm",
         ".wma",
-        ".wmv",
-        ".ytb"
+        ".wmv"
       ],
       "emulators": [
         {
