@@ -7,7 +7,7 @@
 # 往后规则: 发版时从开发分支【复制】出 vX.Y-stable(不再改名, 免得别人釘的分支突然消失),
 # 开发线走 vX.Y-dev。要编哪一版自己选釘 -stable(冻结)或 -dev(开发中)。
 PKG_NAME="emuelec-emulationstation"
-PKG_VERSION="495e5bf8ad2863af591f89a8c1cfa705c9fc37f2"
+PKG_VERSION="49b57295b7fd7656744a98b67b3500bb2c03c100"
 PKG_GIT_CLONE_BRANCH="v1.1-stable"
 PKG_REV="1"
 PKG_ARCH="any"
