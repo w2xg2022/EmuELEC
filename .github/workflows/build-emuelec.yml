@@ -730,12 +730,20 @@ jobs:
         run: |
           NOTES="自动云编译：${PROJECT}/${DEVICE} SUBDEVICE=${{ matrix.model }}
           触发方式：${{ github.event_name }}"
+          # NOTE(w2xg2022): Release 标题用【韧体自己的建置时间戳】,不用 run_id。
+          # 时间戳直接从产出档名取(..._devel_YYYYMMDDHHMMSS-MODEL.img.gz),这样标题、档名、
+          # 开机后 /etc/os-release 的 VERSION 三者一致,一眼对得上「装的是哪一版」;
+          # run_id 是纯流水号,看不出新旧也对不上机器上的版本字串。
+          # 取不到就退回当下 UTC 时间 —— 绝不让这步挡掉整轮编译成果(参见上面 5xx 那段教训)。
+          STAMP=$(ls out/*.img.gz 2>/dev/null | head -1 | sed -n 's/.*_\([0-9]\{14\}\)[-.].*/\1/p')
+          [ -n "$STAMP" ] || STAMP=$(date -u +%Y%m%d%H%M%S)
+          echo "Release 标题时间戳：${STAMP}"
           for i in 1 2 3 4 5; do
             if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
               gh release upload "$TAG" out/* --repo "${{ github.repository }}" --clobber && exit 0
             else
               gh release create "$TAG" out/* --repo "${{ github.repository }}" \
-                --title "EmuELEC ${{ matrix.model }} (${{ github.run_id }})" \
+                --title "EmuELEC ${{ matrix.model }} (${STAMP})" \
                 --notes "$NOTES" --latest && exit 0
             fi
             echo "::warning::建立 Release 第 ${i} 次失败(多半是 GitHub 5xx),$((i*20))s 后重试"
