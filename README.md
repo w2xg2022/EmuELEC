@@ -38,6 +38,10 @@
 > 每个型号各自发布独立 Release（tag 形如 `<型号>-<run id>`），**不要用
 > `releases/latest`**——那只会指向最后完成的那个型号，另一个型号会下载到错的固件。
 > 上表的链接已按型号筛选，取列表最上方那笔即为该型号最新版。
+>
+> Release **标题**用的是韧体自己的建置时间戳，例 `EmuELEC X98mini (20260726054718)`——
+> 与档名、与开机后 `/etc/os-release` 的 `VERSION` 三者一致，一眼就能对上「装的是哪一版」。
+> （tag 仍用 run id，负责唯一性与回溯到是哪一次编译。）
 
 ## 写入 eMMC（免 U 盘开机）
 
@@ -71,7 +75,25 @@ installtoemmc.sh list       # 列出支持的型号
 
 建置速度靠两层快取：`build-state-<型号>`（接力 checkpoint，工具链+userland）与
 `kernel-state-<型号>-<hash>`（kernel 与耦合驱动的原子 bundle）。命中时两个型号并行
-约 18 分钟完成；这些 Release 是基础设施，**清理旧固件时切勿删除**。
+约 20 分钟完成。
+
+> ### ⚠️ 清理旧固件时，这些 Release 一个都不能删
+>
+> 本仓库的 Releases 里混着**固件**与**建置基础设施**，后者名字看起来像旧档案，实际是活的：
+>
+> | Release | 作用 | 删掉的后果 |
+> |---|---|---|
+> | `source-mirrors` | 上游失效大型套件的镜像 | 🔴 **直接编不过**——`packages/linux-firmware/kernel-firmware/package.mk` 的 `PKG_URL` 指向它 |
+> | `prebuilt-cores` | 重量级核心的预编译整包 | 🔴 **直接编不过**——`scummvmsa` / `same_cdi` 等 `package.mk` 的 `PKG_URL` 指向它 |
+> | `build-state-<型号>` | 接力 checkpoint（工具链+userland） | 🟠 每轮从零编，撞 runner 6 小时上限 |
+> | `kernel-state-<型号>-<hash>` | kernel 原子 bundle（**只有当前 hash 那笔是活的**） | 🟠 多花约 90 分钟重编内核 |
+> | `built-commit` | 月度 cron 的「代码有没有变」闸门 | 🟡 排程判断失准 |
+>
+> ★**特别提醒**★：`build-state-*` 的 Release **建立日期**停在很早（如 07-04），看起来像废弃的旧档，
+> 但它每次编译都会被 `Restore/Save build checkpoint` 更新——要看**资产的更新时间**才准。
+> 只凭 Release 列表上的日期判断，会把编译提速的关键当成垃圾删掉。
+>
+> 可安全删除的只有**固件 Release**（tag 形如 `<型号>-<run id>`）里的历史版本。
 
 本地编译指令范例：
 ```
@@ -95,7 +117,9 @@ PROJECT=Amlogic-ce DEVICE=Amlogic-no SUBDEVICE=E900V22C ARCH=aarch64 DISTRO=EmuE
 
 ## 使用说明
 
-- [手柄按键说明](docs/controller-guide.md) —— 手柄 A/B/X/Y 的三层处理（界面/热键/游戏内）、两种布局侦测、热键组合与游戏内位置对齐，附示意图。
+- [手柄按键说明](docs/controller-guide.md) —— **开箱即用的指定手柄**（附实物图：印刷是 Xbox 式、
+  没有 Guide 键的那一类，插上即可玩，不必跑设定精灵）、其他手柄各自的表现；以及 A/B/X/Y 的
+  三层处理（界面 / 热键 / 游戏内）、两种布局侦测、五组热键组合与游戏内位置对齐。
 
 ## 参考仓库清单
 
