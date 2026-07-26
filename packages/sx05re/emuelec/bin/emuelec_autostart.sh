@@ -34,6 +34,23 @@ elif [ "${EE_DEVICE}" == "Amlogic-no" ]; then
     if [ "${AUDIO_DEVICE_NO,,}" = "auto" ] || [ -z "${AUDIO_DEVICE_NO}" ]; then
     set_ee_setting "ee_audio_device" "0,2"
     fi
+
+    # NOTE(w2xg2022): 开机影片没声音的真因就在这里 —— 上面刚把 asound.conf 从范本
+    # 复制回来,而范本的预设是 pcm "hw:0,0"(SPDIF-B-dummy,一个假装置)。把
+    # ee_audio_device 套用到 asound.conf 的动作原本排在 emustation-config
+    # (emustation.service 的 ExecStartPre)里,已经是 show_splash.sh intro 【之后】,
+    # 于是开机影片整段都播进 dummy 装置。这里提前套用,让影片走使用者选定的输出。
+    #
+    # 实机量测(两台开机当下都是 hw:0,0、ee_audio_device 都是 0,2):
+    #   X98mini(S905W2)  : SPDIF-B 是死路 -> 开机影片全程无声(使用者回报的问题)
+    #   E900V22C(S905L3A): SPDIF-B 碰巧接到 HDMI -> 侥幸有声,并非设计正确
+    # 故这是两台共通的 bug,只是后者被硬件路由蒙混过去。
+    #
+    # 安全性:setauddev 不带参数时只是把 ee_audio_device 写进 asound.conf,
+    # 值已正确时【连一个字节都不会动】(E900V22C 实机验证:执行前后 md5 相同、
+    # exit=0、ES 不受影响),所以只会在错的时候修正、对的时候什么都不做。
+    # 作用域仅 Amlogic-no 分支(E900V22C / X98mini),不影响 OGA/GameForce 等机型。
+    /usr/bin/emuelec-utils setauddev
 fi
 
 HOSTNAME=$(get_ee_setting system.hostname)
