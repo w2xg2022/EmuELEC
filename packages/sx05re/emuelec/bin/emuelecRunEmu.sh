@@ -589,18 +589,22 @@ if [ "${USELOG}" == "1" ]; then # No need to do all this if log is disabled
     eval echo ${RUNTHIS} >> ${EMUELECLOG}
 fi
 
-# NOTE(w2xg2022): -hotkey back 是必要的,不能靠预设。
-# gptokeyb 的退出组合 = HOTKEY + START,而它的 HOTKEY 预设是 SDL 的 "guide"。
-# guide 在 gamecontrollerdb 里对到手柄的中央键(Xbox 360 是 b8) —— 但市面上七成
-# 「Xbox 式」山寨手柄【根本没有 Guide 键】,于是那个组合永远按不出来,终端机、
-# 档案管理员与各独立模拟器全都退不出去(E900V22C 实机坐实)。
-# 改用 "back"(SDL 语意上就是 SELECT,每支手柄都有)后,一律 SELECT+START 退出,
-# 与画面上到处写的提示一致,且不必依赖 gamecontrollerdb 里 guide 对到哪一颗。
+# ★别再试 -hotkey 了(2026-07-26 实机验证过,没用)★
+# gptokeyb 的【退出组合是 guide + START,写死的】,gptokeyb 的 `-hotkey` 参数管的是
+# .gptk 键盘映射模式的热键,【不会】改变退出组合。曾经加过 -hotkey back 想让退出改成
+# SELECT+START,固件出到实机上完全无效(E900V22C 全新刷机实测),已撤除。
 #
-# 为什么不能改 es_input.cfg 就好:gptokeyb 不读 es_input.cfg,只读 SDL 映射表。
-# 只有跑完设定精灵时 configscripts/gamecontrollerdb.sh 才会把 hotkeyenable 翻译成
-# guide 写进映射表 —— 命中出厂名册的手柄不触发这条路径,所以出厂状态永远是坏的。
-[[ "${KILLTHIS}" != "none" ]] && gptokeyb 1 ${KILLTHIS} ${VIRTUAL_KB} -hotkey back -killsignal ${KILLSIGNAL} &
+# 退不出去的真因与正解:gptokeyb 只读 SDL 映射表(gamecontrollerdb),不读 es_input.cfg。
+# 上游把 Xbox 360 家族的 guide 对到 b8(中央 Xbox 键),而七成「Xbox 式」山寨手柄没有这颗键
+# -> 组合永远按不出来。正解是【改映射表让 guide 对到 b6(SELECT)】,已做在
+# packages/sx05re/tools/sysutils/SDL_GameControllerDB/package.mk 的 pre_configure_target。
+# (以前只能靠跑一次设定精灵绕过:精灵会经 configscripts/gamecontrollerdb.sh 把
+#  hotkeyenable 翻译成 guide 覆写该表 —— 这正是「跑完精灵就好了」的机制。)
+#
+# 另注:${KILLSIGNAL} 这里几乎总是空的 —— set_kill_keys() 会把它设成 ${2},而 50 多个
+# 呼叫点里只有 advmame 传了第二参数,所以上面 KILLSIGNAL="15" 的预设其实被覆盖掉了。
+# 实测无害(gptokeyb 收到空值时退回预设 15),故本批不动,记录备查。
+[[ "${KILLTHIS}" != "none" ]] && gptokeyb 1 ${KILLTHIS} ${VIRTUAL_KB} -killsignal ${KILLSIGNAL} &
 
 [[ "${CLOUD_SYNC}" == "1" ]] && wait ${CLOUD_PID}
 
