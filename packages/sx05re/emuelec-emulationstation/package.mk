@@ -25,6 +25,12 @@ if [[ ${DEVICE} == "OdroidGoAdvance"  ]] || [[ ${DEVICE} == "GameForce"  ]]; the
 	PKG_PATCH_DIRS="Rockchip/HH"
 fi
 
+# NOTE(w2xg2022): MD1000 刻意**不**列在这里。
+# patches/Rockchip/emuelec-emulationstation-window-fix-rockchip.patch 是针对上游
+# EmuELEC 的 ES 写的,而本仓库的 ES 源码是自家的 es4all(见上面的 PKG_SITE),
+# es-app/src/FileData.cpp 早已不同,套用会 "Hunk #1 FAILED at 741"。
+# 该 patch 的作用是把 _ENABLEEMUELEC 分支里的 "hideWindow = false" 注释掉
+# (上游用来处理画面撕裂)。es4all 是否需要等效改动,待实机确认后再定。
 if [[ ${DEVICE} == "OdroidM1"  ]] || [[ ${DEVICE} == "RK356x"  ]]; then
 	PKG_PATCH_DIRS="Rockchip"
 fi

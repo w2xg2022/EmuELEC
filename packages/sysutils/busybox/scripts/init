@@ -1367,7 +1367,12 @@ SILENT_OUT=3
 
 # If the network is up (due to the use of the "ip" kernel parameter) and a DNS
 # server is known, allow the libc resolver to use it
-grep '^\(nameserver\|domain\) ' /proc/net/pnp | grep -v '^nameserver 0\.0\.0\.0$' > /etc/resolv.conf
+# /proc/net/pnp 只在内核做了 IP 自动配置(ip= 参数/网络启动)时才存在。一般本地启动
+# 没有这个文件,无条件 grep 会在开机画面上喷一行 "grep: /proc/net/pnp: No such file"。
+# 同一仓库的 packages/sysutils/systemd/scripts/network-base-setup 本来就有 -f 判断,照抄。
+if [ -f /proc/net/pnp ]; then
+  grep '^\(nameserver\|domain\) ' /proc/net/pnp | grep -v '^nameserver 0\.0\.0\.0$' > /etc/resolv.conf
+fi
 
 if [ "${boot%%=*}" = "FILE" ]; then
   error "check arguments" "boot argument can't be FILE type..."

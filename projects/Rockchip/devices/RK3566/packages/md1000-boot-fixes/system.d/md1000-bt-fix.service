@@ -1,0 +1,13 @@
+[Unit]
+Description=MD1000 RTL8822CS bluetooth serdev re-probe
+After=bluetooth.service
+Wants=bluetooth.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/md1000-bt-fix.sh
+KillMode=process
+Restart=no
+
+[Install]
+WantedBy=emuelec.target

@@ -1,0 +1,12 @@
+[Unit]
+Description=MD1000 HDMI audio routing setup
+Before=emustation.service
+After=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/md1000-audio-setup.sh
+
+[Install]
+WantedBy=emuelec.target

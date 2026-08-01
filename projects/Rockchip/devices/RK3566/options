@@ -1,0 +1,211 @@
+################################################################################
+# setup device defaults
+################################################################################
+
+  # The TARGET_CPU variable controls which processor should be targeted for
+  # generated code.
+    case $TARGET_ARCH in
+      aarch64)
+        TARGET_KERNEL_ARCH="arm64"
+        TARGET_PATCH_ARCH="aarch64"
+        TARGET_FLOAT="hard"
+        TARGET_CPU="cortex-a55"
+		TARGET_CPU_FLAGS="+crc+crypto+fp+simd"
+        TARGET_FPU="fp-armv8"
+        TARGET_FEATURES="64bit"
+        ;;
+      arm)
+        TARGET_KERNEL_ARCH="arm64"
+        TARGET_PATCH_ARCH="aarch64"
+        TARGET_FLOAT="hard"
+        TARGET_CPU="cortex-a53"
+        TARGET_CPU_FLAGS="+crc"
+        TARGET_FPU="crypto-neon-fp-armv8"
+        TARGET_FEATURES="32bit"
+        ;;
+    esac
+
+  # Kernel target
+    KERNEL_TARGET="Image"
+
+  # Additional kernel make parameters (for example to specify the u-boot loadaddress)
+    KERNEL_MAKE_EXTRACMD=""
+    KERNEL_MAKE_EXTRACMD+=" rockchip/rk3566-md1000.dtb"
+
+    
+  # Mali GPU family
+  # OPENGLES 指的是"提供 GLES 用户空间的那个包"。其它 Rockchip device 写的是
+  # mali-bifrost,但那其实是 linux-drivers 里的 out-of-tree kbase 内核模块,
+  # 全树没有任何东西依赖 libmali,等于根本没装 GLES 用户空间(这也是 RK356x
+  # 一直"未经妥善测试"的原因之一)。MD1000 指向 device 层自带的 libmali。
+  # 另外 packages/linux/package.mk 里"OPENGLES = libmali 就关掉 lima/panfrost"
+  # 那条判断,也正好是我们要的。
+    MALI_FAMILY="g52"
+    OPENGLES="libmali"
+
+  # Vulkan:用 ARM 闭源 blob(libmali-vulkan),不是 mesa/panvk。
+  # blob 与 ICD 由 device 层的 packages/graphics/libmali-vulkan 提供,
+  # 它自己依赖 vulkan-loader;这里设成非 "no" 才会走 VULKAN_SUPPORT=yes 那条路。
+    VULKAN="vulkan-loader"
+
+  # kernel serial console
+  # MD1000 的调试串口是 uart2 (ttyS2)，不是 4.19 BSP 那套 ttyFIQ0
+  # ★不要加 console=tty0★:加了之后 fbcon 会绑上 framebuffer,模拟器转场的
+  # 空档画面会闪出 console 文字(/etc/motd 那一行)。E900V22C 不会,正是因为
+  # Amlogic-no 根本没设 EXTRA_CMDLINE。bring-up 阶段曾靠它在 HDMI 上看
+  # initramfs 的错误讯息(手边没有 USB-TTL 线),适配完成后已不需要 ——
+  # 真要临时看,改 bootargs 加回来即可。
+    EXTRA_CMDLINE="console=ttyS2,1500000 ssh"
+    
+  # ★2026-07-31:改用 mainline 6.18 试 AV(3.5mm)沙沙声★
+  # 旧值 rk356x-6.6(vendor BSP)留着可随时切回 —— 改这一行即可,两套 config 并存:
+  #   linux/rk356x-6.6/  = vendor BSP 6.6 的 config
+  #   linux/md1000-6.18/ = mainline 6.18 的 config(本轮新增)
+  # ★切回 6.6 时 sources/rk817_codec.c 与 post_unpack 的 codec 移植会自动重新生效★
+  # ★已知 TODO(6.18 尚未处理):mainline 树内【没有】Mali kbase(Armbian 用 Panfrost),
+  #   所以 GPU/Vulkan 会失效、ES 起不来。kbase 是外挂模组(rocknix/mali_kbase),
+  #   已实测对 6.18.40 编译零错误,但还没接进建置系统。
+  #   ★本轮目的只是「用 SSH 验证 AV 是否正常」,GPU 留到下一阶段★
+    LINUX="md1000-6.18"
+
+  # ── 命名：DEVICE = 家族(RK3566)，SUBDEVICE = 机型(MD1000) ──────────────
+  # 与 Amlogic-ce 那边 DEVICE=Amlogic-no / SUBDEVICE=X98mini 同一套架构。
+  # 映像名 = EmuELEC-<DEVICE>.<arch>-<OS_VERSION>-<OS_CODENAME>_<stage>_<时间戳>-<SUBDEVICE>
+  #
+  # UBOOT_SYSTEM 只用来在 scripts/uboot_helper 里查这个家族(本家族走链载、
+  # 不构建 u-boot，见 README)。scripts/image:125 会在 UBOOT_SYSTEM != DEVICE 时
+  # 把它当成映像名后缀，所以刻意与 DEVICE 同名让那段消失；机型名改由
+  # SUBDEVICE 提供(scripts/mkimage:32)。原先写小写 md1000 才会冒出 -md1000，
+  # 那是副作用不是设计。
+	UBOOT_SYSTEM="RK3566"
+    SUBDEVICE="MD1000"
+
+  # OS_CODENAME 标示 CoreELEC/Kodi 世代(19 Matrix / 20 Nexus / 21 Omega / 22 Piers)。
+  # 全局默认在 distributions/EmuELEC/version 是 Nexus，Rockchip 这边一直没人覆写，
+  # 于是默认吃到旧的那个。这里显式跟上 Piers，与 Amlogic-no 一致。
+  # 注意：OS_CODENAME 全树只有 scripts/image:111 一处使用(组版本字符串)，纯命名、
+  # 不影响任何功能。
+    OS_CODENAME="Piers"
+
+  # additional Firmware to use (dvb-firmware, misc-firmware, wlan-firmware)
+  # Space separated list is supported,
+  # e.g. FIRMWARE="dvb-firmware misc-firmware wlan-firmware"
+  # kernel-firmware 用来带 RTL8822CS 的固件:WiFi 走 rtw88/rtw8822c_fw.bin、
+  # 蓝牙走 rtl_bt/rtl8822cs_*.bin。两者都已在 kernel-firmware/firmwares/any.dat
+  # 的 rtw88/* 与 rtl_bt/* 里;LibreELEC 的 wlan-firmware 只有旧的 rtlwifi,没有 rtw88。
+    FIRMWARE="wlan-firmware misc-firmware kernel-firmware" #dvb-firmware
+    
+  # additional drivers to install:
+  # for a list of additional drivers see packages/linux-drivers
+  # Space separated list is supported,
+  # e.g. ADDITIONAL_DRIVERS="DRIVER1 DRIVER2"
+  # MD1000 板载 WiFi/BT = Realtek RTL8822CS(SDIO WiFi + UART 蓝牙)。
+  # 两者的驱动都在内核树内(rtw88/rtw8822cs.c、drivers/bluetooth/hci_h5.c),
+  # 由 linux.aarch64.conf 的 CONFIG_RTW88_8822CS=m / CONFIG_BT_HCIUART 打开,
+  # 不需要 out-of-tree 驱动;vendor 的 rockchip_wlan 只有 rkwifi(Broadcom),没这颗。
+  # ★mali-bifrost = Mali kbase(外挂模组)★:mainline 6.18 树内【没有】kbase
+  #   (Armbian 走 Panfrost),但我们的 GLES/Vulkan user-space 是 ARM 闭源 blob,
+  #   它要的是 kbase 的 /dev/mali0。没有它 ES 拿不到 GL context 会一直崩溃重启。
+  #   来源与版本配对见 packages/linux-drivers/mali-bifrost/package.mk(device 层覆盖)。
+  ADDITIONAL_DRIVERS="mali-bifrost" #RTL8192CU RTL8192DU RTL8192EU RTL8188EU RTL8812AU RTL8821CU"
+  
+  # driver addons to install:
+  # for a list of additinoal drivers see packages/linux-driver-addons
+  # Space separated list is supported,
+    DRIVER_ADDONS="" #dvb-latest"
+
+  # additional packages to install
+  # libmali-vulkan 没有别的包依赖它(EmuELEC 的 ${VULKAN} 只被 mesa/nvidia 消费,
+  # 而我们走 libmali 不走 mesa),所以要在这里显式带进映像。
+  # md1000-boot-fixes:板级开机修正(HDMI 音频路由 + 蓝牙 serdev 重新 probe),
+  # 见该 package 的 package.mk。烤进固件,重刷后不必再手工往 /storage 补。
+  # ★注意:早期版本还会清 /boot/emuelec/TRIGGER 让 EmuELEC 变成一次性,
+  #   那是开发期安全网,已移除 —— 否则每次重开都掉回 Armbian。
+    ADDITIONAL_PACKAGES="dtc:host dtc libmali-vulkan md1000-boot-fixes"
+
+  # debug tty path
+    DEBUG_TTY="/dev/ttyS2"
+
+  # SquashFS compression method (gzip / lzo / xz / zstd)
+    SQUASHFS_COMPRESSION="lzo" 
+    
+  # build and install PulseAudio support (yes / no)
+  PULSEAUDIO_SUPPORT="yes"
+
+  # build and install espeak support (yes / no)
+  ESPEAK_SUPPORT="no"
+
+  # build and install bluetooth support (yes / no)
+  BLUETOOTH_SUPPORT="yes"
+
+  # build and install Avahi (Zeroconf) daemon (yes / no)
+  AVAHI_DAEMON="no"
+
+  # build with UPnP support (yes / no)
+  KODI_UPNP_SUPPORT="no"
+
+  # build with NFS support (mounting nfs shares via the OS) (yes / no)
+  NFS_SUPPORT="no"
+
+  # build with Samba Client support (mounting samba shares via the OS) (yes / no)
+  SAMBA_SUPPORT="yes"
+
+  # build and install Samba Server (yes / no)
+  SAMBA_SERVER="yes"
+
+  # build and install SFTP Server (yes / no)
+  SFTP_SERVER="yes"
+
+  # build and install OpenVPN support (yes / no)
+  OPENVPN_SUPPORT="no"
+
+  # build and install diskmounter support (udevil)
+  # this service provide auto mounting support for external drives in the
+  # mediacenter also automount internally drives at boottime via udev (yes / no)
+  UDEVIL="yes"
+
+  # build and install exFAT fuse support (yes / no)
+  EXFAT="yes"
+
+  # build and install NTFS-3G fuse support (yes / no)
+  NTFS3G="yes"
+
+  # build and install hfs filesystem utilities (yes / no)
+  HFSTOOLS="yes"
+
+  # build and install remote support (yes / no)
+  REMOTE_SUPPORT="no"
+
+  # build and install CEC adapter support (yes / no)
+  CEC_SUPPORT="no"
+
+  # build and install CEC framework support (yes / no)
+  CEC_FRAMEWORK_SUPPORT="no"
+
+  # build and install iSCSI support - iscsistart (yes / no)
+  ISCSI_SUPPORT="no"
+
+  # build with swap support (yes / no)
+  SWAP_SUPPORT="yes"
+
+  # swap support enabled per default (yes / no)
+  SWAP_ENABLED_DEFAULT="no"
+
+  # swapfile size if SWAP_SUPPORT=yes in MB
+  SWAPFILESIZE="300"
+
+  # cron support (yes / no)
+  CRON_SUPPORT="no"
+
+  # Distribution Specific source location
+  DISTRO_MIRROR="http://sources.libreelec.tv/mirror"
+  DISTRO_SRC="http://sources.libreelec.tv/$LIBREELEC_VERSION"
+
+  # Settings package name - blank if not required
+  DISTRO_PKG_SETTINGS=""
+
+  # IR remote protocols supported in default config
+  IR_REMOTE_PROTOCOLS=""
+
+  # IR remote keymaps supported in default config
+  IR_REMOTE_KEYMAPS=""

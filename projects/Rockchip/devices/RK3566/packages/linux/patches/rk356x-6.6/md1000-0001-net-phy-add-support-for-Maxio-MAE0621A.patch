@@ -1,0 +1,308 @@
+Subject: [PATCH] net: phy: add Maxio MAE0621A driver (MD1000)
+
+MD1000(RK3566)板载的千兆 PHY 是 Maxio MAE0621A(PHY ID 0x7b744411),
+rockchip-linux 6.6 树里没有这颗 PHY 的驱动,phylib 只能退回 Generic PHY。
+Generic PHY 不会去配 MAE0621A 的时钟寄存器,而 dts 里 gmac1 是
+clock_in_out = "input"(125MHz RGMII 时钟由 PHY 供给 MAC),拿不到时钟
+GMAC 的 DMA 复位就会超时。实机(EmuELEC 首版固件)表现为:
+
+  eth0: PHY [stmmac-1:00] driver [Generic PHY] (irq=POLL)
+  rk_gmac-dwmac fe010000.ethernet: Failed to reset the dma
+  eth0: stmmac_hw_setup: DMA engine initialization failed
+  eth0: __stmmac_open: Hw setup failed
+
+网口完全不通。同一块板子上的 Armbian(ophub 6.18.39)用同一份 dts 却正常,
+差别就在于它带了 CONFIG_MAXIO_PHY。
+
+驱动本体直接取自 w2xg2022/armbian-kernel(= 现在跑在 MD1000 上的那份,
+和 rocknix-kernel 同一版本),不是仓库里 Amlogic 那份 WIP 版。两者差别很大,
+而且都在 MD1000 会踩到的点上:
+  * 这份多认 0xffff4411 —— MAE0621A 在 vendor page 初始化跑完之前会先报这个
+    临时 ID,不认它 phylib 就绑不上;
+  * clk_init 直接写 0xd92/0x02 = 0x200a(晶振),Amlogic 那份是按 workmode
+    BIT(5) 自动判振荡器/晶振,MD1000 上判错就没有时钟;
+  * config_init 的 vendor 寄存器序列长得多,并带 ADC self-check。
+
+相对上游 6.18 版的唯一改动:phy_disable_eee_mode() 是 6.13 才有的 API,
+6.6 上改成等价的 phydev->eee_broken_modes |= MDIO_EEE_100TX | MDIO_EEE_1000T。
+
+ophub 那边同样没有改 stmmac_main.c / phy_device.c,所以这里也不改。
+
+搭配 devices/MD1000/linux/rk356x-6.6/linux.aarch64.conf 里的
+CONFIG_MAXIO_PHY=y 一起生效。
+---
+diff --git a/drivers/net/phy/Kconfig b/drivers/net/phy/Kconfig
+index 34d4ce9..222d4fd 100644
+--- a/drivers/net/phy/Kconfig
++++ b/drivers/net/phy/Kconfig
+@@ -328,6 +328,11 @@ config AT803X_PHY
+ 	  Currently supports the AR8030, AR8031, AR8033, AR8035 and internal
+ 	  QCA8337(Internal qca8k PHY) model
+ 
++config MAXIO_PHY
++	tristate "Maxio Ethernet PHYs"
++	help
++	  Supports Maxio MAE0621A Gigabit Ethernet PHYs.
++
+ config QSEMI_PHY
+ 	tristate "Quality Semiconductor PHYs"
+ 	help
+diff --git a/drivers/net/phy/Makefile b/drivers/net/phy/Makefile
+index 3110f5b..9cbd684 100644
+--- a/drivers/net/phy/Makefile
++++ b/drivers/net/phy/Makefile
+@@ -70,6 +70,7 @@ obj-$(CONFIG_MARVELL_10G_PHY)	+= marvell10g.o
+ obj-$(CONFIG_MARVELL_PHY)	+= marvell.o
+ obj-$(CONFIG_MARVELL_88Q2XXX_PHY)	+= marvell-88q2xxx.o
+ obj-$(CONFIG_MARVELL_88X2222_PHY)	+= marvell-88x2222.o
++obj-$(CONFIG_MAXIO_PHY)	+= maxio.o
+ obj-$(CONFIG_MAXLINEAR_GPHY)	+= mxl-gpy.o
+ obj-$(CONFIG_MEDIATEK_GE_PHY)	+= mediatek-ge.o
+ obj-$(CONFIG_MEDIATEK_GE_SOC_PHY)	+= mediatek-ge-soc.o
+diff --git a/drivers/net/phy/maxio.c b/drivers/net/phy/maxio.c
+new file mode 100644
+index 0000000..6671424
+--- /dev/null
++++ b/drivers/net/phy/maxio.c
+@@ -0,0 +1,241 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Maxio Ethernet PHY driver
++ *
++ * Supports the MAE0621A PHY used by the MD1000 RK3566 board.  The PHY
++ * may report a temporary 0xffff4411 ID before the vendor-page init
++ * sequence is applied; keep that ID so phylib can bind early enough to
++ * initialize the device.
++ */
++
++#include <linux/delay.h>
++#include <linux/module.h>
++#include <linux/phy.h>
++
++#define PHY_ID_MAE0621A_Q2C              0x7b744411
++#define PHY_ID_MAE0621A_Q3C              0x7b744412
++#define PHY_ID_MAE0621A_Q2C_BOOT         0xffff4411
++#define MAE0621A_PHY_ID_MASK             0xffffffff
++
++#define MAE0621A_PAGE_SELECT             0x1f
++
++static int maxio_read_page(struct phy_device *phydev)
++{
++	return __phy_read(phydev, MAE0621A_PAGE_SELECT);
++}
++
++static int maxio_write_page(struct phy_device *phydev, int page)
++{
++	return __phy_write(phydev, MAE0621A_PAGE_SELECT, page);
++}
++
++static int maxio_read_paged(struct phy_device *phydev, int page, u32 regnum)
++{
++	int oldpage, ret;
++
++	oldpage = phy_select_page(phydev, page);
++	if (oldpage < 0)
++		return oldpage;
++
++	ret = __phy_read(phydev, regnum);
++
++	return phy_restore_page(phydev, oldpage, ret);
++}
++
++static int maxio_write_paged(struct phy_device *phydev, int page,
++			     u32 regnum, u16 val)
++{
++	int oldpage, ret;
++
++	oldpage = phy_select_page(phydev, page);
++	if (oldpage < 0)
++		return oldpage;
++
++	ret = __phy_write(phydev, regnum, val);
++
++	return phy_restore_page(phydev, oldpage, ret);
++}
++
++static int maxio_write_mmd(struct phy_device *phydev, int devnum, u16 regnum,
++			   u16 val)
++{
++	int oldpage, ret;
++
++	if (devnum != MDIO_MMD_AN || regnum != MDIO_AN_EEE_ADV)
++		return -EOPNOTSUPP;
++
++	oldpage = phy_select_page(phydev, 0);
++	if (oldpage < 0)
++		return oldpage;
++
++	ret = __phy_write(phydev, MII_MMD_CTRL, MDIO_MMD_AN);
++	if (ret < 0)
++		goto out;
++
++	ret = __phy_write(phydev, MII_MMD_DATA, MDIO_AN_EEE_ADV);
++	if (ret < 0)
++		goto out;
++
++	ret = __phy_write(phydev, MII_MMD_CTRL, MII_MMD_CTRL_NOINCR |
++			  MDIO_MMD_AN);
++	if (ret < 0)
++		goto out;
++
++	ret = __phy_write(phydev, MII_MMD_DATA, val);
++
++out:
++	return phy_restore_page(phydev, oldpage, ret);
++}
++
++static int mae0621a_adc_ready(struct phy_device *phydev)
++{
++	static const u16 values[] = { 0xf908, 0xfa08, 0xfb08, 0xfc08 };
++	int i, ret;
++
++	ret = maxio_write_paged(phydev, 0xd96, 0x02, 0x1fff);
++	if (ret < 0)
++		return ret;
++
++	ret = maxio_write_paged(phydev, 0xd96, 0x02, 0x1000);
++	if (ret < 0)
++		return ret;
++
++	for (i = 0; i < ARRAY_SIZE(values); i++) {
++		ret = maxio_write_paged(phydev, 0xd8f, 0x0b, values[i]);
++		if (ret < 0)
++			return ret;
++
++		ret = maxio_read_paged(phydev, 0xd92, 0x0b);
++		if (ret < 0)
++			return ret;
++		if (!(ret & 0x01ff))
++			return -EAGAIN;
++	}
++
++	return 0;
++}
++
++static int mae0621a_self_check(struct phy_device *phydev)
++{
++	int i, ret = -EAGAIN;
++
++	for (i = 0; i < 50; i++) {
++		ret = mae0621a_adc_ready(phydev);
++		if (!ret)
++			break;
++
++		ret = maxio_write_paged(phydev, 0x0, MII_BMCR, 0x1940);
++		if (ret < 0)
++			return ret;
++		msleep(10);
++
++		ret = maxio_write_paged(phydev, 0x0, MII_BMCR, 0x1140);
++		if (ret < 0)
++			return ret;
++
++		ret = maxio_write_paged(phydev, 0x0, MII_BMCR, 0x9140);
++		if (ret < 0)
++			return ret;
++	}
++
++	ret = maxio_write_paged(phydev, 0xd96, 0x02, 0x0fff);
++	if (ret < 0)
++		return ret;
++
++	ret = maxio_write_paged(phydev, 0x0, MII_BMCR, 0x9140);
++	if (ret < 0)
++		return ret;
++
++	ret = maxio_write_page(phydev, 0);
++	if (ret < 0)
++		return ret;
++
++	return 0;
++}
++
++static int mae0621a_config_init(struct phy_device *phydev)
++{
++	int ret;
++
++	phydev_info(phydev, "initializing Maxio MAE0621A PHY\n");
++
++	ret = maxio_write_paged(phydev, 0xd92, 0x02, 0x200a);
++	if (ret < 0)
++		return ret;
++	ret = maxio_write_page(phydev, 0);
++	if (ret < 0)
++		return ret;
++	msleep(100);
++
++	ret = maxio_write_paged(phydev, 0xda0, 0x10, 0x0f13);
++	ret |= maxio_write_paged(phydev, 0xd92, 0x02, 0x200a);
++	ret |= maxio_write_mmd(phydev, MDIO_MMD_AN, MDIO_AN_EEE_ADV, 0);
++	phydev->eee_broken_modes |= MDIO_EEE_100TX | MDIO_EEE_1000T;
++
++	ret |= maxio_write_paged(phydev, 0xd8f, 0x00, 0x0300);
++	ret |= maxio_write_paged(phydev, 0xd90, 0x02, 0x1555);
++	ret |= maxio_write_paged(phydev, 0xd90, 0x05, 0x2b15);
++	ret |= maxio_write_paged(phydev, 0xd96, 0x13, 0x07bc);
++	ret |= maxio_write_paged(phydev, 0xd8f, 0x08, 0x2500);
++	ret |= maxio_write_paged(phydev, 0xd91, 0x06, 0x6880);
++	ret |= maxio_write_paged(phydev, 0xd92, 0x14, 0x000a);
++	ret |= maxio_write_paged(phydev, 0xd91, 0x07, 0x5b00);
++	ret |= maxio_write_paged(phydev, 0xa43, 0x19, 0x0823);
++	ret |= maxio_write_page(phydev, 0);
++	if (ret < 0)
++		return ret;
++
++	ret = mae0621a_self_check(phydev);
++	if (ret < 0)
++		phydev_warn(phydev, "self check did not report ready: %d\n", ret);
++
++	msleep(100);
++	return 0;
++}
++
++static struct phy_driver maxio_drivers[] = {
++	{
++		PHY_ID_MATCH_EXACT(PHY_ID_MAE0621A_Q2C),
++		.name		= "Maxio MAE0621A Gigabit Ethernet",
++		.config_init	= mae0621a_config_init,
++		.config_aneg	= genphy_config_aneg,
++		.read_status	= genphy_read_status,
++		.suspend	= genphy_suspend,
++		.resume		= genphy_resume,
++		.read_page	= maxio_read_page,
++		.write_page	= maxio_write_page,
++	}, {
++		PHY_ID_MATCH_EXACT(PHY_ID_MAE0621A_Q3C),
++		.name		= "Maxio MAE0621A Q3C Gigabit Ethernet",
++		.config_init	= mae0621a_config_init,
++		.config_aneg	= genphy_config_aneg,
++		.read_status	= genphy_read_status,
++		.suspend	= genphy_suspend,
++		.resume		= genphy_resume,
++		.read_page	= maxio_read_page,
++		.write_page	= maxio_write_page,
++	}, {
++		PHY_ID_MATCH_EXACT(PHY_ID_MAE0621A_Q2C_BOOT),
++		.name		= "Maxio MAE0621A Gigabit Ethernet (ffff4411)",
++		.config_init	= mae0621a_config_init,
++		.config_aneg	= genphy_config_aneg,
++		.read_status	= genphy_read_status,
++		.suspend	= genphy_suspend,
++		.resume		= genphy_resume,
++		.read_page	= maxio_read_page,
++		.write_page	= maxio_write_page,
++	},
++};
++module_phy_driver(maxio_drivers);
++
++static struct mdio_device_id __maybe_unused maxio_tbl[] = {
++	{ PHY_ID_MAE0621A_Q2C, MAE0621A_PHY_ID_MASK },
++	{ PHY_ID_MAE0621A_Q3C, MAE0621A_PHY_ID_MASK },
++	{ PHY_ID_MAE0621A_Q2C_BOOT, MAE0621A_PHY_ID_MASK },
++	{ }
++};
++MODULE_DEVICE_TABLE(mdio, maxio_tbl);
++
++MODULE_DESCRIPTION("Maxio MAE0621A PHY driver");
++MODULE_AUTHOR("MD1000 RK3566 bringup");
++MODULE_LICENSE("GPL");

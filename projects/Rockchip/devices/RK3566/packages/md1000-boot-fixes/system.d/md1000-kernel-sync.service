@@ -1,0 +1,11 @@
+[Unit]
+Description=MD1000 sync chainload KERNEL/dtb from /flash to eMMC
+After=emuelec.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/md1000-kernel-sync.sh
+
+[Install]
+WantedBy=emuelec.target

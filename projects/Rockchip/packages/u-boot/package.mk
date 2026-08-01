@@ -36,7 +36,14 @@ case "$PROJECT" in
 	PKG_SHA256="210b3c0f0e27a72be1aeff860a712bd2fc694c015f835ffd75dea6531502521a"
 	PKG_URL="https://github.com/hardkernel/u-boot/archive/$PKG_VERSION.tar.gz"
 	PKG_PATCH_DIRS="OdroidM1"
-  elif [ "$DEVICE" == "RK356x" ]; then
+  elif [ "$DEVICE" == "RK356x" -o "$DEVICE" == "RK3566" ]; then
+    # RK3566 家族（机型 MD1000，原 DEVICE 名就叫 MD1000）默认走链载启动、
+    # 不构建 u-boot；这里指向 firefly 分支只是为了万一要自建 u-boot 时
+    # 源码与 uboot_helper 里的 defconfig 保持一致（未验证）。
+    #
+    # NOTE(w2xg2022): DEVICE 改名后忘了同步这里，会掉进下面的 else 拿到另一个
+    # u-boot 源码，然后被 projects/Rockchip/patches/u-boot 里那个 rk3399 的
+    # patch 打爆（Hunk #1 FAILED at 856）—— 2026-07-29 实际踩过。
     PKG_VERSION="fc354ea827411c1cc35ddf76162aed02f7a9c7d5"
     PKG_SHA256="eefe0b87e40d801a649a4ea6e062ed239aa08be1cbf81fa4e6a13e9344bf556d"
     PKG_URL="https://gitlab.com/firefly-linux/u-boot/-/archive/$PKG_VERSION/u-boot-$PKG_VERSION.tar.gz"

@@ -1,0 +1,852 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+
+/*
+ * Author: Piotr Oniszczuk piotr.oniszczuk@gmail.com
+ * Based on Quartz64 DT by: Peter Geis pgwipeout@gmail.com
+ */
+
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/leds/common.h>
+#include <dt-bindings/pinctrl/rockchip.h>
+#include <dt-bindings/soc/rockchip,vop2.h>
+#include "rk3566.dtsi"
+
+/ {
+	model = "MD1000 RK3566";
+	/* rockchip 6.6 vendor BSP 方言版，源自 mainline rk3566-md1000.dts */
+	compatible = "rockchip,rk3566-md1000", "rockchip,rk3566";
+
+	aliases {
+		ethernet0 = &gmac1;
+		mmc0 = &sdhci;
+		mmc1 = &sdmmc0;
+		mmc2 = &sdmmc1;
+	};
+
+	chosen: chosen {
+		stdout-path = "serial2:1500000n8";
+	};
+
+	gmac1_clkin: external-gmac1-clock {
+		compatible = "fixed-clock";
+		clock-frequency = <125000000>;
+		clock-output-names = "gmac1_clkin";
+		#clock-cells = <0>;
+	};
+
+/* HDMI 连接器：vendor 不用 hdmi-connector 图，见下方 route_hdmi */
+
+	ir-receiver {
+		compatible = "gpio-ir-receiver";
+		gpios = <&gpio4 RK_PC3 GPIO_ACTIVE_LOW>;
+		pinctrl-0 = <&ir_int>;
+		linux,rc-map-name = "rc-beelink-gs1";
+		status = "okay";
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		led_work: led-0 {
+			gpios = <&gpio0 RK_PC3 GPIO_ACTIVE_HIGH>;
+			function = LED_FUNCTION_HEARTBEAT;
+			color = <LED_COLOR_ID_BLUE>;
+			linux,default-trigger = "heartbeat";
+			pinctrl-names = "default";
+			pinctrl-0 = <&led_work_en>;
+		};
+	};
+
+sdio_pwrseq: sdio-pwrseq {
+		status = "okay";
+		compatible = "mmc-pwrseq-simple";
+		clocks = <&pmucru CLK_RTC_32K>;
+		clock-names = "ext_clock";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_enable_h>;
+		post-power-on-delay-ms = <200>;
+		reset-gpios = <&gpio2 RK_PB1 GPIO_ACTIVE_LOW>;
+	};
+
+	/*
+	 * 模拟音频（3.5mm AV 口）—— ★2026-07-31:整组改回 mainline 配方(照 ROCKNIX)★
+	 *
+	 * ★决策依据:三方比对(见 memory: md1000_emuelec_av_audio)★
+	 *   Armbian(mainline)  ✅ AV 有声
+	 *   ROCKNIX(mainline)  ✅ AV 有声   ← 同一块板、同属 LibreELEC 家族、同样的建置系统
+	 *   我们(vendor 配方)   ❌ 只有沙沙
+	 * 两个【实机确认能出声】的系统用的是【完全同一套配方】:
+	 *   simple-audio-card + mainline rk817_codec + DAI 挂 pmic 本体 + 保留 TRCM。
+	 * ★而本档这份 dts 本来就是从 ROCKNIX 那份改过来的★(连注释都是同一段英文的中译),
+	 * 是我们【单方面】分岔成 vendor 配方。现在整组改回去。
+	 * 来源:work-rocknix/repo/projects/ROCKNIX/devices/RK3566/patches/linux/
+	 *      0027-arm64-dts-rockchip-add-device-tree-for-md1000.patch
+	 *
+	 * ★下面这段「2026-07-30 定案:别再走回头路」已作废★(保留脉络):
+	 *   当时试过 mainline codec 也是沙沙,于是回到 vendor 配方。但那次是
+	 *   【只换 codec 驱动】的半套移植,声卡/DAI 位置/TRCM 状态都不确定,
+	 *   ROCKNIX 证明的是【整套配方】可行 —— 单换一件不等于复制了那套配方。
+	 *   旧结论原文:「Armbian 能出声是整套 6.18 mainline 的功劳,拆一半移植过来
+	 *   就成了 vendor i2s + mainline codec 这种没人验证过的混搭」。
+	 *   ★但 ROCKNIX 用的也不是 6.6 vendor i2s —— 所以「vendor i2s 天生不行」
+	 *   这个推论【尚未被证明】,本轮正是要验它★。
+	 */
+	rk809_sound: rk809-sound {
+		compatible = "simple-audio-card";
+		simple-audio-card,format = "i2s";
+		simple-audio-card,name = "Analog RK809";
+		simple-audio-card,mclk-fs = <256>;
+
+		simple-audio-card,widgets =
+			"Headphone", "Headphones";
+		simple-audio-card,routing =
+			"Headphones", "HPOL",
+			"Headphones", "HPOR";
+
+		simple-audio-card,cpu {
+			sound-dai = <&i2s1_8ch>;
+		};
+
+		simple-audio-card,codec {
+			sound-dai = <&rk809>;
+		};
+	};
+
+	/* MD1000 has no S/PDIF connector; kept for reference, disabled. */
+/* MD1000 没有 S/PDIF 接口，vendor 的 &spdif_8ch 保持 disabled（见下方） */
+
+/* 音频：SPDIF 一并留待音频阶段 */
+
+	vcc12v0_dcin: regulator-vcc12v0-dcin {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc12v0_dcin";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <12000000>;
+		regulator-max-microvolt = <12000000>;
+	};
+
+	vcc5v0_sys: regulator-vcc5v0-sys {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		vin-supply = <&vcc12v0_dcin>;
+	};
+
+	vcc3v3_sys: regulator-vcc3v3-sys {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		vin-supply = <&vcc12v0_dcin>;
+	};
+
+	vcc_3v3: regulator-vcc-3v3 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_3v3";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
+	vcc_3v3_wifi_en: regulator-vcc-3v3-wifi-en {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_3v3_wifi_en";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		enable-active-high;
+		gpio = <&gpio2 RK_PC6 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_en_h>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
+	vcc_3v3_wifi: regulator-vcc-3v3-wifi {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_3v3_wifi";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		enable-active-high;
+		gpio = <&gpio3 RK_PB0 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_pwren_h>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
+	vcc5v0_host: regulator-vcc5v0-host {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_host";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		enable-active-high;
+		gpio = <&gpio0 RK_PA6 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&vcc5v0_host_en &hub_rst_3v3>;
+		vin-supply = <&vcc5v0_sys>;
+	};
+
+	vcc5v0_usb: regulator-vcc5v0-usb {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_usb";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		enable-active-high;
+		gpio = <&gpio3 RK_PB3 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&vcc5v0_usb_en>;
+		vin-supply = <&vcc5v0_sys>;
+	};
+
+	vcc5v0_otg: regulator-vcc5v0-otg {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_otg";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		enable-active-high;
+		gpio = <&gpio0 RK_PC4 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&vcc5v0_otg_en>;
+		vin-supply = <&vcc5v0_sys>;
+	};
+
+	vcca_1v8: regulator-vcca-1v8 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcca_1v8";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
+	vdda_0v9: regulator-vdda-0v9 {
+		compatible = "regulator-fixed";
+		regulator-name = "vdda_0v9";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <900000>;
+		regulator-max-microvolt = <900000>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
+	vdd_fixed: regulator-vdd-fixed {
+		compatible = "regulator-fixed";
+		regulator-name = "vdd_fixed";
+		regulator-min-microvolt = <950000>;
+		regulator-max-microvolt = <950000>;
+		regulator-always-on;
+		regulator-boot-on;
+		vin-supply = <&vcc5v0_sys>;
+	};
+
+	vdd_cpu: regulator-vdd-cpu {
+		compatible = "pwm-regulator";
+		pwms = <&pwm0 0 5000 1>;
+		regulator-name = "vdd_cpu";
+		regulator-min-microvolt = <800000>;
+		regulator-max-microvolt = <1200000>;
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-settling-time-up-us = <250>;
+		pwm-supply = <&vcc5v0_sys>;
+	};
+
+	vdd_logic: regulator-vdd-logic {
+		compatible = "pwm-regulator";
+		pwms = <&pwm1 0 5000 1>;
+		regulator-name = "vdd_logic";
+		regulator-min-microvolt = <800000>;
+		regulator-max-microvolt = <1100000>;
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-settling-time-up-us = <250>;
+		pwm-supply = <&vcc5v0_sys>;
+	};
+
+	/*
+	 * Enable line for the external audio amplifier feeding the AV jack.
+	 * The vendor kernel drives this from the codec (spk-ctl-gpios), which
+	 * mainline rk817_codec does not support, so hold it on via a regulator.
+	 */
+	vcc_amp: regulator-vcc-amp {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_amp";
+		regulator-always-on;
+		regulator-boot-on;
+		enable-active-high;
+		gpio = <&gpio1 RK_PA4 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&spk_ctl_h>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+};
+
+&combphy1_usq {
+	phy-supply = <&vcc5v0_host>;
+	status = "okay";
+};
+
+&combphy2_psq {
+	status = "okay";
+};
+
+&cpu0 {
+	cpu-supply = <&vdd_cpu>;
+};
+
+&cpu1 {
+	cpu-supply = <&vdd_cpu>;
+};
+
+&cpu2 {
+	cpu-supply = <&vdd_cpu>;
+};
+
+&cpu3 {
+	cpu-supply = <&vdd_cpu>;
+};
+
+&gmac1 {
+	assigned-clocks = <&cru SCLK_GMAC1_RX_TX>, <&cru SCLK_GMAC1>;
+	assigned-clock-parents = <&cru SCLK_GMAC1_RGMII_SPEED>, <&gmac1_clkin>;
+	phy-mode = "rgmii";
+	clock_in_out = "input";
+	pinctrl-names = "default";
+	pinctrl-0 = <&gmac1m1_miim
+		    &gmac1m1_tx_bus2
+		    &gmac1m1_rx_bus2
+		    &gmac1m1_rgmii_clk
+		    &gmac1m1_rgmii_bus
+		    &gmac1m1_clkinout>;
+	snps,reset-gpio = <&gpio4 RK_PC2 GPIO_ACTIVE_LOW>;
+	snps,reset-active-low;
+	/* Reset time is 20ms, 100ms for rtl8211f */
+	snps,reset-delays-us = <0 20000 100000>;
+
+	tx_delay = <0x4f>;
+	rx_delay = <0x2d>;
+	phy-handle = <&rgmii_phy1>;
+	status = "okay";
+};
+
+&mdio1 {
+	rgmii_phy1: ethernet-phy@0 {
+		compatible = "ethernet-phy-id7b74.4411",
+			     "ethernet-phy-ieee802.3-c22";
+		reg = <0x0>;
+	};
+};
+
+&hdmi {
+	assigned-clocks = <&cru CLK_HDMI_CEC>;
+	assigned-clock-rates = <32768>;
+	avdd-0v9-supply = <&vdda_0v9>;
+	avdd-1v8-supply = <&vcca_1v8>;
+
+	/*
+	 * ★修 HDMI 声音「沙沙 + 卡顿」的根因(2026-07-30 实测定案)★
+	 *
+	 * 症状:声音时好时坏,坏的时候听起来像沙沙声并且一顿一顿。
+	 * 用 OBS 从 HDMI 撷取端录下来做波形分析,发现【根本不是噪音】——
+	 * 音频被每 ~555ms 切断一次,86~95% 的时间是无声的,而有声的那 30~40ms
+	 * 片段是干净乐音(相邻取样差/RMS = 0.21,白噪音会是 1.41)。
+	 * 那个「沙沙」其实是反复切断/接回产生的爆音。
+	 *
+	 * 板子这一端全部清白:用 ALSA file 外挂旁录送往硬件的位元组,与影片原档
+	 * 解码出来的音量包络逐格吻合;DMA 全程 48000/s 稳定消耗、XRUN = 0。
+	 * 所以劣化发生在资料离开 ALSA/DMA 之后的 HDMI 传输层。
+	 *
+	 * 真因在 dw-hdmi.c 的 hdmi_set_clk_regenerator():
+	 *     if (config3 & AHBAUDDMA || config3 & GPAUD || hdmi->cts_manual)
+	 *             cts = ftdms * n / (128 * sample_rate);   // 手动算,确定值
+	 *     else
+	 *             cts = 0;                                 // 退回硬件自动量测
+	 * 本板音频走 I2S,实测 CONFIG3_ID = 0x00(GPAUD/AHBAUDDMA 两个 bit 都是 0),
+	 * 而 hdmi->cts_manual 来自 of_property_read_bool(np, "rockchip,cts-manual")
+	 * ——dts 没写就是 false → cts = 0 → 交给硬件自动量测。
+	 * 那个自动量测【不可靠】:实测量到 148500(正确) / 136898 / 5172 / 4930,
+	 * 电视靠 Fs = TMDS × N / (128 × CTS) 还原音频时钟,CTS 错就还原失败。
+	 *
+	 * 实测对照(六个串流零反例):CTS=148500 → 声音完美(占空比 100%);
+	 * CTS 为其它值 → 断续卡顿。与哪个程序、什么 ROM、负载轻重都无关,
+	 * 纯粹是每次开启串流时硬件量测的运气。
+	 *
+	 * 加上这个属性后改走手动:1080p60 @48kHz 会算出
+	 *     148500000 × 6144 / (128 × 48000) = 148500
+	 * 正好就是「好」的那个值,而且换分辨率/取样率也会跟着重算。
+	 *
+	 * 上游依据:Rockchip 自己在 rk3528.dtsi 的 hdmi 节点就加了这个属性。
+	 */
+	rockchip,cts-manual;
+
+	status = "okay";
+};
+
+/* vendor 显示链：VP0 -> HDMI（对照 rk3566-box.dtsi） */
+&hdmi_in_vp0 {
+	status = "okay";
+};
+
+&hdmi_in_vp1 {
+	status = "disabled";
+};
+
+&route_hdmi {
+	status = "okay";
+	connect = <&vp0_out_hdmi>;
+};
+
+/* vendor 无 hdmi_in 端点容器，改用 &hdmi_in_vp0 */
+
+/* vendor 无 hdmi_out 端点容器 */
+
+&hdmi_sound {
+	/* rk356x.dtsi 已定义好 i2s0 <-> hdmi，这里开启即可 */
+	status = "okay";
+};
+
+&gpu {
+	status = "okay";
+};
+
+&i2c0 {
+	status = "okay";
+
+	/*
+	 * RK809 PMIC. Only the built-in audio codec is described here: the
+	 * board's core rails are modelled by the fixed/PWM regulators above
+	 * and left at their power-on defaults, so no "regulators" subnode is
+	 * added on purpose - adding one would take over the live power tree.
+	 */
+	rk809: pmic@20 {
+		compatible = "rockchip,rk809";
+		reg = <0x20>;
+
+		interrupt-parent = <&gpio0>;
+		interrupts = <RK_PA3 IRQ_TYPE_LEVEL_LOW>;
+
+		/*
+		 * ★2026-07-31:改成 mainline binding(照 ROCKNIX)—— codec DAI 挂 PMIC【本体】★
+		 * 不再有 codec 子节点:
+		 *  - mainline 的 rk817_codec 是 devm_clk_get(pdev->dev.【parent】, "mclk"),
+		 *    所以 clocks/clock-names 必须写在 PMIC 本体上(vendor 那份相反,取自己的节点)。
+		 *  - MFD cell 的 .of_compatible 会在 post_unpack 被 sed 掉(见 package.mk),
+		 *    照 mainline 的 rk8xx-core.c 写法 { .name = "rk817-codec", }。
+		 *  - sound-dai = <&rk809> 解析得到的根据:codec 平台装置没有 of_node 时,
+		 *    ASoC 会退回用 parent 的 of_node(soc-core.c 的 soc_component_to_node,
+		 *    6.6 与 6.18 都有这段)。
+		 *  - i2s1 的 mclk 引脚(i2s1m0_mclk)跟着挂本体,与 ROCKNIX 一致。
+		 *  - hp-volume/spk-volume 是 vendor 驱动特有的,mainline 不认,已删除。
+		 *
+		 * ★唯一【刻意不照抄】ROCKNIX 的地方:MCLK 用 rates 不用 parents★
+		 * ROCKNIX/Armbian 写 assigned-clock-parents = <&cru CLK_I2S1_8CH_TX>,
+		 * 但那是 6.15+/6.18 的树;★6.6 这棵树里 i2s1_mclkout_tx 的候选 parent 名叫
+		 * mclk_i2s1_8ch_tx,CLK_I2S1_8CH_TX 不在候选名单里 → clk 框架比对的是 clk_hw
+		 * 指针不是名称,对不上就【静默不动作、不报错】,mux 停在 xin_osc0_half=12.000MHz★。
+		 * 这个坑已实机确认过两次,照抄必然复发。改用【指定频率】让框架自己选 parent,
+		 * 不依赖任何一棵树的 parent 命名(12288000 = 256 x 48000,实测生效)。
+		 */
+		clocks = <&cru I2S1_MCLKOUT_TX>;
+		clock-names = "mclk";
+		assigned-clocks = <&cru I2S1_MCLKOUT_TX>;
+		assigned-clock-rates = <12288000>;
+
+		#clock-cells = <1>;
+		#sound-dai-cells = <0>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&pmic_int>, <&i2s1m0_mclk>;
+
+		/*
+		 * 照 ROCKNIX 放在本体。注意 mainline 的 rk817_codec 其实是去
+		 * 【codec 子节点】读这个属性(of_get_child_by_name(parent,"codec")),
+		 * 没有子节点时 node=NULL → 读不到 → mic_in_differential=false。
+		 * 也就是说这行在 mainline binding 下【实际不生效】,ROCKNIX 也是如此。
+		 * 只影响录音路径,与 AV 播放无关,保留是为了与参考实作逐字一致。
+		 */
+		rockchip,mic-in-differential;
+
+		wakeup-source;
+	};
+};
+
+&i2s1_8ch {
+	/*
+	 * TRCM（clk-trcm）TX/RX 共用一条时钟线，所以只接 TX 引脚。
+	 * 覆盖 SoC 默认引脚组（它还会占用 GPIO1_A4 上的 sclkrx），与厂商 Android DT 对齐，
+	 * 把 GPIO1_A4 让给外置功放使能（vcc_amp）。MCLK 在 rk809_codec 里声明。
+	 */
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2s1m0_sclktx &i2s1m0_lrcktx
+		     &i2s1m0_sdi0 &i2s1m0_sdo0>;
+
+	/*
+	 * ★★2026-07-31:TRCM 改回【保留】—— 下面那段关掉它的实验结论已作废★★
+	 * 作废理由(两条独立):
+	 * ① ★三方比对:两个【实机确认 AV 能出声】的系统都保留 TRCM★
+	 *    Armbian(6.18 mainline) 与 ROCKNIX(6.15.6 mainline,同一块板、同属 LibreELEC 家族、
+	 *    连 i2s 引脚覆写让出 GPIO1_A4 的写法都跟我们一样)—— 两边的 &i2s1_8ch 都带
+	 *    rockchip,trcm-sync-tx-only。★本档这份 dts 本来就是从 ROCKNIX 那份改过来的★
+	 *    (注释都是同一段英文的中译),关掉 TRCM 是我们【单方面的分岔】。
+	 * ② 当初关掉它的唯一收获「左右声道从分不清变成可区分」★2026-07-31 实机完全重现不了★
+	 *    (播左声道 10s / 右声道 10s,使用者回报无法区分),那次多半是单次不可信的观察
+	 *    (见 [[feedback_state_expected_sound]])。
+	 * 而关掉它反而【制造了】一个真缺陷:mclk_rx 停在 1.188GHz 空转(见下方 assigned-clocks 那段)。
+	 * 关掉 TRCM 唯一站得住的客观效果是 DMACR 010f0110 -> 000f0110(与 Armbian 一致),
+	 * 但那是 vendor 与 mainline 对 TRCM 的实作差异,不是「关掉才对」的证据。
+	 *
+	 * ------------------------ 以下为已作废的旧实验说明(保留脉络) ------------------------
+	 * ★实验(2026-07-30):关掉 TRCM,让 i2s 走一般模式★
+	 * 背景:AV 只有沙沙声,而【所有】能量测的东西都已确认与 Armbian(同一块板、
+	 * 实机有声)完全一致 —— DMA 连续无 XRUN、I2S 寄存器(TXCR/CKR/CLKDIV)逐字节相同、
+	 * codec slave+16bit、APLL 相同、MCLK 12.288MHz、pinmux 正确、PMIC/codec
+	 * 全区段(0x00~0x4f)真值比对无播放相关差异。codec 驱动 mainline/vendor 两版也都试过。
+	 * 逻辑上只剩「寄存器快照看不到的东西」=【驱动的执行期行为与时序】。
+	 *
+	 * 而唯一从没换过的软件就是 i2s 驱动(6.6 vendor vs Armbian 的 6.18 mainline)。
+	 * 具体着力点:开机 dmesg 明确印
+	 *     rockchip-i2s-tdm fe410000.i2s: Register PCM for TRCM mode
+	 * TRCM(TX/RX 共用时钟)是 vendor 驱动特有的一套机制,带自己的 DMA guard 与
+	 * trcm_pause/trcm_resume(见 rockchip_i2s_tdm.c 的 params_trcm),mainline 的实作
+	 * 完全不同。这正是「最终寄存器值相同、过程却不同」会发生的地方。
+	 *
+	 * ★注意:光删自己这一行没用★ —— rk356x.dtsi 第 2656 行本来就有这个属性,
+	 * 会被继承进来,所以必须用 /delete-property/ 才真的拿掉(实验的前提)。
+	 * 引脚仍然只接 TX(不接 sclkrx),把 GPIO1_A4 留给外置功放使能 vcc_amp。
+	 */
+	/* 照 ROCKNIX / Armbian:明确保留 TRCM(rk356x.dtsi 本来就有,这里显式写出来更清楚) */
+	rockchip,trcm-sync-tx-only;
+
+	/*
+	 * ★这里【曾经】加过 assigned-clocks = <&cru CLK_I2S1_8CH_RX> / rates = 12288000,
+	 *   现已移除(TRCM 恢复后它是冗余的),但成因值得留档 —— 它是【关掉 TRCM 的副作用】★
+	 *
+	 * 当时症状:播放(纯 TX)时 clk_summary 实测
+	 *     mclk_i2s1_8ch_rx   enable=1   rate=1188000000     ← 1.188 GHz 在音频区块空转
+	 * 成因(vendor 与 mainline 的 rockchip_i2s_tdm.c 这段【逐字相同】):
+	 *     rockchip_i2s_tdm_set_sysclk():
+	 *         if (clk_trcm) { mclk_tx_freq = freq; mclk_rx_freq = freq; }
+	 *         else if (PLAYBACK) mclk_tx_freq = freq;   // 只设 tx
+	 * 关掉 TRCM → clk_trcm=0 → 只有 mclk_tx 走到 clk_set_rate(),mclk_rx 从来没人指定速率,
+	 * 停在来源 gpll 的 1188MHz;但 i2s_tdm_prepare_enable_mclk() 是 tx/rx【无条件一起】
+	 * clk_prepare_enable() 的,所以它照样被打开。
+	 * ★现在 TRCM 已恢复(走 if 分支),驱动自己会把 rx 设成与 tx 相同的频率,不必再补★
+	 * (实测:TRCM 恢复后 mclk_i2s1_8ch_rx 跟着 tx 走 = 11289600 @44.1kHz,正确)。
+	 *
+	 * ★若将来又要手动指定 RX:必须挂 CLK_I2S1_8CH_RX,不能挂 MCLK_I2S1_8CH_RX★
+	 *     MUX (CLK_I2S1_8CH_RX,  "clk_i2s1_8ch_rx",  ..., CLK_SET_RATE_PARENT)  <- 有
+	 *     GATE(MCLK_I2S1_8CH_RX, "mclk_i2s1_8ch_rx", "clk_i2s1_8ch_rx", 0)      <- flags=0
+	 * gate 没有 CLK_SET_RATE_PARENT,挂在 gate 上设速率不会向上传播 = 白设。
+	 */
+
+	status = "okay";
+};
+
+&i2s0_8ch {
+	/* HDMI 音频的 CPU 侧；&hdmi_sound 已在 rk356x.dtsi 里接好 i2s0 <-> hdmi */
+	status = "okay";
+};
+
+&pinctrl {
+	bt {
+		bt_enable_h: bt-enable-h {
+			rockchip,pins = <2 RK_PB7 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		bt_host_wake_l: bt-host-wake-l {
+			rockchip,pins = <2 RK_PC0 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+
+		bt_wake_l: bt-wake-l {
+			rockchip,pins = <2 RK_PC1 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	sdio-pwrseq {
+		wifi_enable_h: wifi-enable-h {
+			rockchip,pins = <2 RK_PB1 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		wifi_host_wake_h: wifi-host-wake-h {
+			rockchip,pins = <2 RK_PB2 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+
+		wifi_en_h: wifi-en-h {
+			rockchip,pins = <2 RK_PC6 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		wifi_pwren_h: wifi-pwren-h {
+			rockchip,pins = <3 RK_PB0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	usb {
+		vcc5v0_usb_en: vcc5v0-usb-en {
+			rockchip,pins = <3 RK_PB3 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		vcc5v0_host_en: vcc5v0-host-en {
+			rockchip,pins = <0 RK_PA6 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		vcc5v0_otg_en: vcc5v0-otg-en {
+			rockchip,pins = <0 RK_PC4 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		hub_rst_3v3: hub-rst-3v3 {
+			rockchip,pins = <3 RK_PA6 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	ir {
+		ir_int: ir-int {
+			rockchip,pins = <4 RK_PC3 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	pmic {
+		pmic_int: pmic-int {
+			rockchip,pins = <0 RK_PA3 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+
+	sound {
+		hp_det: hp-det {
+			rockchip,pins = <0 RK_PB7 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		spk_ctl_h: spk-ctl-h {
+			rockchip,pins = <1 RK_PA4 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	led {
+		led_work_en: led_work_en {
+			rockchip,pins = <0 RK_PC3 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+};
+
+&pmu_io_domains {
+	pmuio2-supply = <&vcc_3v3>;
+	vccio1-supply = <&vcc_3v3>;
+	vccio3-supply = <&vcc_3v3>;
+	vccio4-supply = <&vcca_1v8>;
+	vccio5-supply = <&vcc_3v3>;
+	vccio6-supply = <&vcca_1v8>;
+	vccio7-supply = <&vcc_3v3>;
+	status = "okay";
+};
+
+&pwm0 {
+	status = "okay";
+};
+
+&pwm1 {
+	status = "okay";
+};
+
+&sdhci {
+	bus-width = <8>;
+	mmc-hs200-1_8v;
+	non-removable;
+	status = "okay";
+};
+
+&sdmmc0 {
+	bus-width = <4>;
+	cap-sd-highspeed;
+	cd-gpios = <&gpio0 RK_PA4 GPIO_ACTIVE_LOW>;
+	disable-wp;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdmmc0_bus4 &sdmmc0_clk &sdmmc0_cmd &sdmmc0_det>;
+	vmmc-supply = <&vcc_3v3>;
+	status = "okay";
+};
+
+&sdmmc1 {
+	/*
+	 * Realtek RTL8822CS，走上游 rtw88 的 SDIO 驱动
+	 * （drivers/net/wireless/realtek/rtw88/rtw8822cs.c）。
+	 * vendor 的 rockchip_wlan 只带 rkwifi(Broadcom)，没有这颗，所以不用 wlan-platdata。
+	 */
+	#address-cells = <1>;
+	#size-cells = <0>;
+	bus-width = <4>;
+	clock-frequency = <150000000>;
+	cap-sdio-irq;
+	cap-sd-highspeed;
+	sd-uhs-sdr104;
+	keep-power-in-suspend;
+	mmc-pwrseq = <&sdio_pwrseq>;
+	non-removable;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdmmc1_bus4 &sdmmc1_cmd &sdmmc1_clk>;
+	vmmc-supply = <&vcc_3v3_wifi>;
+	vqmmc-supply = <&vcca_1v8>;
+	status = "okay";
+
+	rtl8822cs: wifi@1 {
+		compatible = "realtek,rtl8822cs";
+		reg = <1>;
+		interrupt-parent = <&gpio2>;
+		interrupts = <RK_PB2 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "host-wake";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_host_wake_h>;
+	};
+};
+
+&spdif_8ch {
+	/* MD1000 没有 S/PDIF 接口；关掉它也是 AV 模拟音频能正常出声的前提之一 */
+	status = "disabled";
+};
+
+&spi1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi1m1_cs0 &spi1m1_pins>;
+};
+
+&tsadc {
+	/* tshut mode 0:CRU 1:GPIO */
+	rockchip,hw-tshut-mode = <1>;
+	/* tshut polarity 0:LOW 1:HIGH */
+	rockchip,hw-tshut-polarity = <0>;
+	status = "okay";
+};
+
+&uart1 {
+	/* 蓝牙走上游 serdev 绑定，drivers/bluetooth/hci_h5.c 认 realtek,rtl8822cs-bt */
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart1m0_xfer &uart1m0_ctsn &uart1m0_rtsn>;
+	status = "okay";
+	uart-has-rtscts;
+
+	bluetooth {
+		compatible = "realtek,rtl8822cs-bt";
+		clocks = <&pmucru CLK_RTC_32K>;
+		clock-names = "lpo";
+		device-wake-gpios = <&gpio2 RK_PC1 GPIO_ACTIVE_HIGH>;
+		enable-gpios = <&gpio2 RK_PB7 GPIO_ACTIVE_HIGH>;
+		host-wake-gpios = <&gpio2 RK_PC0 GPIO_ACTIVE_HIGH>;
+		max-speed = <1500000>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&bt_host_wake_l &bt_wake_l &bt_enable_h>;
+		vbat-supply = <&vcc3v3_sys>;
+		vddio-supply = <&vcca_1v8>;
+	};
+};
+
+&uart2 {
+	status = "okay";
+};
+
+&vop {
+	/*
+	 * 对齐 vendor 写法(参照树内 rk3566-box.dtsi),不要沿用 mainline 那套:
+	 *   mainline: assigned-clocks = <&cru DCLK_VOP0>, <&cru DCLK_VOP1>
+	 *             assigned-clock-parents = <&pmucru PLL_HPLL>, <&cru PLL_VPLL>
+	 *             (没有 vop-supply)
+	 *   vendor  : 只指定 DCLK_VOP1 -> PLL_VPLL,并且必须给 vop-supply
+	 * vendor 的 VOP2 驱动会去取 vop-supply,缺了它显示起不来。
+	 */
+	status = "okay";
+	assigned-clocks = <&cru DCLK_VOP1>;
+	assigned-clock-parents = <&cru PLL_VPLL>;
+	vop-supply = <&vdd_logic>;
+};
+
+&vop_mmu {
+	status = "okay";
+};
+
+/* vendor 已在 rk356x.dtsi 内接好 vp0_out_hdmi */
+
+&vdpu {
+	status = "okay";
+};
+
+&vdpu_mmu {
+	status = "okay";
+};
+
+&usb2phy0 {
+	status = "okay";
+};
+
+&usb2phy0_host {
+	phy-supply = <&vcc5v0_host>;
+	status = "okay";
+};
+
+&usb2phy0_otg {
+	vbus-supply = <&vcc5v0_otg>;
+	status = "okay";
+};
+
+&u2phy1_host {
+	phy-supply = <&vcc5v0_host>;
+	status = "okay";
+};
+
+&u2phy1_otg {
+	phy-supply = <&vcc5v0_host>;
+	status = "okay";
+};
+
+&usb2phy1 {
+	status = "okay";
+};
+
+&usb_host0_ehci {
+	status = "okay";
+};
+
+&usb_host0_ohci {
+	status = "okay";
+};
+
+&usbdrd30 {
+	status = "okay";
+};
+
+&usbdrd_dwc3 {
+	/delete-property/ extcon;
+	dr_mode = "host";
+	status = "okay";
+};
+
+&usb_host1_ehci {
+	status = "okay";
+};
+
+&usb_host1_ohci {
+	status = "okay";
+};
+
+&usbhost30 {
+	status = "okay";
+};
+
+&usbhost_dwc3 {
+	status = "okay";
+};

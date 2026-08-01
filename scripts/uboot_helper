@@ -303,6 +303,22 @@ devices = \
          'config' : 'firefly-rk3568_defconfig' 
          },
     },
+    # RK3566 = 机型家族（DEVICE），底下的机型用 SUBDEVICE 区分，目前只有 MD1000。
+    # 本家族走链载启动（eMMC Armbian 的 u-boot booti 链载），正常构建不产生 u-boot；
+    # 此项存在只为满足 scripts/image 的 UBOOT_SYSTEM 校验，config 仅在真的去构建
+    # u-boot 时才会被使用，届时源码走 firefly 分支（见 packages/u-boot/package.mk）。
+    #
+    # NOTE(w2xg2022): 内层键名与 DEVICE 同名是刻意的 —— scripts/image:125 只在
+    # UBOOT_SYSTEM != DEVICE 时才把 UBOOT_SYSTEM 当成映像名后缀，写成别的名字会
+    # 平白多一段。机型后缀由 SUBDEVICE 提供（scripts/mkimage:32，与 X98mini 同机制）。
+    #
+    # 注意别和同目录下既有的 RK356x（firefly 4.19 那个 device）搞混，两者不同。
+    'RK3566': {
+      'RK3566': {
+        'dtb': 'rk3566-md1000.dtb',
+         'config' : 'firefly-rk3568_defconfig'
+         },
+    },
     'OdroidM1': { 
       'OdroidM1': {
         'dtb': 'rk3568-odroid-m1.dtb',

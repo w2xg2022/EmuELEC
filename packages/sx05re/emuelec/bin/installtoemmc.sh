@@ -94,10 +94,17 @@ teardown_android_super() {
 #
 # To add a new box: add a case entry here and append its name to BOARDS.
 # ---------------------------------------------------------------------------
-BOARDS="x98mini e900v22c"
+BOARDS="x98mini e900v22c md1000"
 
 board_config() {
     SUPER_TEARDOWN=""   # default: boards that don't reuse Android 'super'
+    # METHOD selects the install strategy:
+    #   reuse       - locked Amlogic boxes: reformat two existing factory
+    #                 named partitions (the stock u-boot ignores any new
+    #                 partition table, so we must not repartition)
+    #   repartition - boards where we control u-boot and the eMMC is plain
+    #                 GPT: replace the second partition with EMUELEC+STORAGE
+    METHOD="reuse"
     case "$1" in
     x98mini)
         # Reuse Android 'super' (eMMC part 28/0x1C, ~2.25GB) and 'userdata'
@@ -126,11 +133,221 @@ board_config() {
         SUPER_TEARDOWN=""
         DESC="E900V22C (Amlogic S905L3A/G12A, 8GB eMMC)"
         ;;
+    md1000)
+        # RK3566 board with a plain GPT eMMC and OUR OWN u-boot -- nothing like
+        # the locked Amlogic boxes above, so METHOD is "repartition".
+        #
+        # u-boot on this board CANNOT enumerate USB, so the kernel has to live
+        # on the eMMC and is chainloaded: p1 holds boot.scr plus
+        # emuelec/{KERNEL,dtb,TRIGGER}. That is why p1 is kept untouched.
+        #
+        # Two things are never touched, and they are what makes recovery
+        # always possible:
+        #   1) the reserved area holding the vendor u-boot (its DRAM timings
+        #      are calibrated for this board -- replacing it is high risk)
+        #   2) p1 BOOT, the chainload host
+        # Everything from p2 on (the Armbian rootfs) is replaced by
+        # p2 EMUELEC (FAT32, SYSTEM+kernel) and p3 STORAGE (ext4, the rest).
+        #
+        # Modelled on the ROCKNIX installtoemmc for the same board
+        # (es4all dist/rocknix/sources/installtoemmc), verified on real hardware.
+        METHOD="repartition"
+        EMMC_DEV="/dev/mmcblk0"
+        COMPAT="rockchip,rk3566-md1000"
+        EE_SIZE_GIB=2          # p2 EMUELEC; the rest of the disk becomes STORAGE
+        DESC="MD1000 (Rockchip RK3566 TV box, 32GB eMMC)"
+        ;;
     *)
         return 1
         ;;
     esac
     return 0
+}
+
+# ---------------------------------------------------------------------------
+# METHOD=repartition  (boards where we control u-boot; plain GPT eMMC)
+# ---------------------------------------------------------------------------
+install_repartition() {
+    local EMMC="$EMMC_DEV"
+    local FLASH_SRC DISKSZ LAST_USABLE P2_START EE_SIZE_S EE_END ST_START ST_GIB part
+    local BK n it e DTB
+
+    [ -b "$EMMC" ] || die "${EMMC} not found."
+
+    # Refuse if we are already running from the eMMC (the target would be
+    # the running system itself).
+    FLASH_SRC=$(awk '$2=="/flash"{print $1}' /proc/mounts)
+    case "$FLASH_SRC" in
+        ${EMMC}*) die "Already booted from eMMC (/flash=${FLASH_SRC}) - nothing to install." ;;
+        /dev/sd*) : ;;
+        *) die "Unexpected /flash source: ${FLASH_SRC} (expected a USB device /dev/sd*)." ;;
+    esac
+    [ -f /flash/SYSTEM ] || die "/flash/SYSTEM does not exist - is this a running EmuELEC?"
+    # EmuELEC's automounter mounts the Armbian rootfs it finds on p2 under
+    # /var/media (e.g. /var/media/ROOTFS). Since we are about to erase that
+    # partition anyway, unmount it ourselves instead of dead-ending the user
+    # with "unmount it first" for something they never mounted.
+    # Anything mounted OUTSIDE /var/media is not ours to touch -> refuse.
+    local mp
+    for part in "${EMMC}p2" "${EMMC}p3"; do
+        while :; do
+            mp=$(awk -v d="$part" '$1==d{print $2; exit}' /proc/mounts)
+            [ -n "$mp" ] || break
+            case "$mp" in
+                /var/media/*)
+                    echo ">>> ${part} is automounted at ${mp} - unmounting"
+                    umount "$mp" 2>/dev/null || umount -l "$mp" 2>/dev/null || \
+                        die "${part} is mounted at ${mp} and could not be unmounted."
+                    ;;
+                *)
+                    die "${part} is mounted at ${mp} - unmount it first (refusing: not an automount)."
+                    ;;
+            esac
+        done
+    done
+
+    # ---- geometry -------------------------------------------------------
+    # NOTE: EmuELEC's busybox has NO 'blockdev', so read the size from sysfs
+    # (512-byte sectors). Using blockdev here is exactly why an earlier
+    # version of this installer never actually ran on real hardware.
+    DISKSZ=$(cat "/sys/class/block/$(basename "$EMMC")/size" 2>/dev/null)
+    [ -n "$DISKSZ" ] || die "Cannot read the size of ${EMMC} from sysfs."
+    LAST_USABLE=$(( DISKSZ - 34 ))          # leave room for the secondary GPT
+
+    P2_START=$(parted -s "$EMMC" unit s print 2>/dev/null | \
+               awk '/^[[:space:]]*2[[:space:]]/{gsub(/s/,"",$2); print $2}')
+    [ -n "${P2_START:-}" ] || die "Could not read the start sector of p2."
+
+    EE_SIZE_S=$(( EE_SIZE_GIB * 1024 * 1024 * 1024 / 512 ))
+    EE_END=$(( P2_START + EE_SIZE_S - 1 ))
+    ST_START=$(( EE_END + 1 ))
+    [ "$ST_START" -lt "$LAST_USABLE" ] || die "Not enough room left for STORAGE."
+    ST_GIB=$(( (LAST_USABLE - ST_START) / 2048 / 1024 ))
+
+    cat <<EOF
+================================================================
+ EmuELEC eMMC installer   --   board: ${BOARD}
+ ${DESC}
+================================================================
+ Target ${EMMC}:
+
+   p1                      KEPT (chainload: boot.scr + emuelec/KERNEL)
+   p2  ${EE_SIZE_GIB}GiB  (${P2_START}s..${EE_END}s)   -> FAT32, label EMUELEC
+   p3  ~${ST_GIB}GiB (${ST_START}s..${LAST_USABLE}s) -> ext4,  label STORAGE
+
+ EVERYTHING ON ${EMMC} AFTER SECTOR ${P2_START} IS ERASED.
+ That is the Armbian system: it will be gone.
+
+ The u-boot reserved area and p1 are never touched, so you can always
+ recover by re-flashing Armbian over MASKROM.
+
+ Games are NOT copied (roms / .update stay on the USB stick).
+
+ When it finishes: power off, UNPLUG THE USB STICK, power on.
+ The stick must be unplugged -- both disks would carry the labels
+ EMUELEC/STORAGE and the boot code just takes the first match, so
+ leaving it in makes which one boots undefined.
+================================================================
+EOF
+
+    if [ "${ASSUME_YES:-0}" != "1" ]; then
+        read -r -p "Type YES to continue: " CONFIRM
+        [ "$CONFIRM" = "YES" ] || { echo "Aborted."; exit 1; }
+    fi
+
+    # ---- back up the GPT ------------------------------------------------
+    BK=/storage/emmc-gpt-backup
+    mkdir -p "$BK"
+    dd if="$EMMC" of="$BK/gpt-primary.bin"   bs=512 count=34 2>/dev/null
+    dd if="$EMMC" of="$BK/gpt-secondary.bin" bs=512 skip="$(( DISKSZ - 33 ))" count=33 2>/dev/null
+    echo ">>> GPT backed up to ${BK}"
+
+    # ---- repartition ----------------------------------------------------
+    # Use parted, never sgdisk: sgdisk is broken on this board (garbled argv).
+    echo ">>> Repartitioning ${EMMC}..."
+    for n in $(parted -s "$EMMC" print 2>/dev/null | \
+               awk '/^[[:space:]]*[0-9]+[[:space:]]/{print $1}' | sort -rn); do
+        [ "$n" -ge 2 ] && parted -s "$EMMC" rm "$n"
+    done
+    parted -s "$EMMC" unit s mkpart primary fat32 "${P2_START}s" "${EE_END}s" || die "Could not create EMUELEC."
+    parted -s "$EMMC" name 2 EMUELEC
+    parted -s "$EMMC" set 2 msftdata on
+    parted -s "$EMMC" unit s mkpart primary ext4 "${ST_START}s" "${LAST_USABLE}s" || die "Could not create STORAGE."
+    parted -s "$EMMC" name 3 STORAGE
+    partprobe "$EMMC"; sleep 3
+    { [ -b "${EMMC}p2" ] && [ -b "${EMMC}p3" ]; } || { sleep 3; partprobe "$EMMC"; sleep 2; }
+    { [ -b "${EMMC}p2" ] && [ -b "${EMMC}p3" ]; } || die "The new partitions did not appear."
+
+    # ---- format ---------------------------------------------------------
+    # The labels must match what boot.cmd puts in bootargs:
+    #   boot=LABEL=EMUELEC disk=LABEL=STORAGE
+    echo ">>> Formatting..."
+    mkfs.vfat -F 32 -n EMUELEC "${EMMC}p2" >/dev/null || die "mkfs.vfat failed."
+    mkfs.ext4 -F -q -L STORAGE -m 0 "${EMMC}p3" >/dev/null || die "mkfs.ext4 failed."
+
+    mkdir -p /tmp/ee_flash /tmp/ee_storage /tmp/ee_boot
+    mount "${EMMC}p2" /tmp/ee_flash   || die "Could not mount the new EMUELEC partition."
+    mount "${EMMC}p3" /tmp/ee_storage || die "Could not mount the new STORAGE partition."
+
+    # ---- copy the OS ----------------------------------------------------
+    echo ">>> Copying the system to EMUELEC..."
+    for it in KERNEL KERNEL.md5 SYSTEM SYSTEM.md5 extlinux oemsplash-1080.png; do
+        [ -e "/flash/$it" ] && cp -a "/flash/$it" /tmp/ee_flash/
+    done
+    for it in /flash/*.dtb; do
+        [ -e "$it" ] && cp -a "$it" /tmp/ee_flash/
+    done
+    sync
+
+    # ---- copy settings, excluding games and rebuildable caches ----------
+    # IMPORTANT: /storage/roms and /storage/.update are separate mount points
+    # (a third USB partition). Copying them would duplicate tens of GB and
+    # would not fit. Games stay on the stick by design.
+    echo ">>> Copying settings to STORAGE (games and caches excluded)..."
+    cd /storage || die "Cannot enter /storage."
+    for e in * .[!.]*; do
+        [ -e "$e" ] || continue
+        case "$e" in
+            roms|.update|.tmp|lost+found|emmc-gpt-backup|installtoemmc.log) continue ;;
+            audio-backup-*) continue ;;
+        esac
+        cp -a "/storage/$e" /tmp/ee_storage/ 2>/dev/null || echo "  warning: could not copy $e"
+    done
+    rm -rf /tmp/ee_storage/.cache/cores 2>/dev/null
+    mkdir -p /tmp/ee_storage/roms
+    sync
+
+    # ---- refresh the chainload kernel/dtb on p1 -------------------------
+    # u-boot reads ONLY these; the copies under /flash are not what boots.
+    # Keeping them in step with the SYSTEM we just installed is essential --
+    # a stale KERNEL here means the box runs an old kernel while
+    # /etc/os-release advertises the new version.
+    echo ">>> Refreshing the chainload kernel/dtb on p1..."
+    mount "${EMMC}p1" /tmp/ee_boot || die "Could not mount p1."
+    mkdir -p /tmp/ee_boot/emuelec
+    cp -f /flash/KERNEL /tmp/ee_boot/emuelec/KERNEL
+    for DTB in /flash/*.dtb; do
+        [ -e "$DTB" ] && cp -f "$DTB" "/tmp/ee_boot/emuelec/$(basename "$DTB")"
+    done
+    # TRIGGER tells boot.cmd to chainload EmuELEC instead of Armbian.
+    [ -e /tmp/ee_boot/emuelec/TRIGGER ] || : > /tmp/ee_boot/emuelec/TRIGGER
+    sync
+
+    umount /tmp/ee_flash /tmp/ee_storage /tmp/ee_boot 2>/dev/null
+
+    echo
+    parted -s "$EMMC" print
+    cat <<EOF
+
+================================================================
+ Done.
+ Power off, UNPLUG THE USB STICK, then power on -> EmuELEC boots
+ from the internal eMMC.
+ If it does not boot: plug the USB stick back in, or re-flash
+ Armbian over MASKROM (the bootloader and p1 were never touched).
+================================================================
+EOF
+    exit 0
 }
 
 list_boards() {
@@ -141,9 +358,18 @@ list_boards() {
 }
 
 auto_detect() {
-    local b f s
+    local b f s compat
+    compat=$(tr '\0' '\n' < /proc/device-tree/compatible 2>/dev/null)
     for b in $BOARDS; do
         board_config "$b" || continue
+        # repartition boards have no factory partitions to size-match against,
+        # so identify them by the device-tree compatible string instead.
+        if [ "$METHOD" = "repartition" ]; then
+            if [ -n "$compat" ] && echo "$compat" | grep -qF "$COMPAT"; then
+                echo "$b"; return 0
+            fi
+            continue
+        fi
         [ -b "$FLASH_DEV" ] && [ -b "$STORAGE_DEV" ] || continue
         f=$(dev_size_mb "$FLASH_DEV") || continue
         s=$(dev_size_mb "$STORAGE_DEV") || continue
@@ -177,6 +403,12 @@ board_config "$BOARD" || { echo "Unknown board: ${BOARD}" >&2; echo; list_boards
 
 # ---- safety checks ----
 [ "$(id -u)" = "0" ] || die "Must run as root."
+
+# Boards that need a real repartition take a completely different path from
+# the "reuse two factory partitions" flow below.
+if [ "${METHOD}" = "repartition" ]; then
+    install_repartition
+fi
 [ -b "$FLASH_DEV" ]   || die "${FLASH_DEV} not found - board '${BOARD}' expects this factory partition. Wrong board/device?"
 [ -b "$STORAGE_DEV" ] || die "${STORAGE_DEV} not found - wrong board/device?"
 
