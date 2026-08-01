@@ -1,0 +1,35 @@
+[Unit]
+# Keeps the eMMC chainload payload (KERNEL + dtb) in sync with the EmuELEC USB
+# stick, so that Armbian never hands u-boot a stale kernel.
+#
+# It runs TWICE per Armbian session, and both runs matter:
+#
+#   ExecStart -- at boot. Covers "the stick was swapped or reflashed while the
+#                machine was powered off".
+#   ExecStop  -- at shutdown/reboot. This is the important one: the usual
+#                workflow is boot Armbian -> write a new image to the stick ->
+#                reboot into EmuELEC. A boot-time-only sync would have run
+#                BEFORE the new image was written and would therefore miss it.
+#
+# Failure is deliberately non-fatal: no USB stick simply means there is nothing
+# to sync, which must never block boot or shutdown.
+Description=Sync EmuELEC chainload payload (KERNEL + dtb) to eMMC
+DefaultDependencies=no
+After=local-fs.target
+Before=shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Wait for the USB stack to enumerate at boot; without this the first run can
+# fire before the stick shows up.
+Environment=USB_WAIT_TRIES=10
+ExecStart=/usr/local/sbin/emuelec-chainload-sync.sh
+ExecStop=/usr/local/sbin/emuelec-chainload-sync.sh
+SuccessExitStatus=0 1
+TimeoutStartSec=60
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target
