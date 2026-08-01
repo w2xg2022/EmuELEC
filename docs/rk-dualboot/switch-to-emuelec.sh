@@ -94,15 +94,24 @@ else
 fi
 
 # --- 2. install or upgrade the chainload block ------------------------------
-# The dtb is stored on eMMC under the fixed name "dtb" so that the boot block
-# carries no board name. Older installs referenced a model-specific filename
-# (e.g. emuelec/rk3566-md1000.dtb); those must be rewritten or the board would
-# keep loading a dtb this script no longer maintains.
+# Two things make an installed block outdated:
+#   - it references a model-specific dtb filename (e.g. emuelec/rk3566-md1000.dtb)
+#     instead of the board-agnostic emuelec/dtb;
+#   - it still passes console=tty0, which binds fbcon to the framebuffer and makes
+#     console text flash on screen whenever an emulator starts or exits.
+# Either way the block has to be rewritten, or the board keeps booting with
+# settings this script no longer maintains.
+block_is_outdated() {
+  grep -q 'emuelec/dtb' /boot/boot.cmd 2>/dev/null || return 0
+  grep -q 'console=tty0' /boot/boot.cmd 2>/dev/null && return 0
+  return 1
+}
+
 if ! grep -q 'emuelec/TRIGGER' /boot/boot.cmd 2>/dev/null; then
   echo "== First run: installing the chainload block into /boot/boot.cmd =="
   install_boot_block
-elif ! grep -q 'emuelec/dtb' /boot/boot.cmd 2>/dev/null; then
-  echo "== Upgrading an outdated chainload block (board-specific dtb name) =="
+elif block_is_outdated; then
+  echo "== Upgrading an outdated chainload block =="
   # Restore the pristine Armbian boot.cmd, then insert the current block, so we
   # never end up with two chainload blocks stacked on top of each other.
   if [ -f /boot/boot.cmd.armbian-orig ]; then

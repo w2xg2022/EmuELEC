@@ -202,12 +202,20 @@ The one genuinely board-specific line is the serial console in
 `boot-emuelec-block.txt`:
 
 ```
-setenv bootargs "boot=LABEL=EMUELEC disk=LABEL=STORAGE quiet console=ttyS2,1500000 console=tty0"
+setenv bootargs "boot=LABEL=EMUELEC disk=LABEL=STORAGE quiet console=ttyS2,1500000"
 ```
 
 `ttyS2` is the RK3566 debug UART. Adjust it for boards that use a different one.
 The load addresses (`0x02080000` / `0x08300000`) are generic for 64-bit Rockchip
 parts and have not needed changing.
+
+> **Do not add `console=tty0`.** It binds the framebuffer console, and console
+> text (the `/etc/motd` banner) then flashes on screen every time an emulator
+> starts or exits — there is no window system holding the display during those
+> gaps. It is genuinely useful during bring-up, though: with no USB-TTL adapter
+> it is the only way to see initramfs errors such as
+> `Could not mount LABEL=EMUELEC` on the TV. Add it while bringing a board up,
+> remove it once the board works.
 
 ## Recovery
 

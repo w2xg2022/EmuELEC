@@ -171,8 +171,15 @@ dtb 刻意存成朴素的 `dtb` 而不是原本那个带机型的档名，**这�
 唯一真正绑板子的是 `boot-emuelec-block.txt` 里的串口：
 
 ```
-setenv bootargs "boot=LABEL=EMUELEC disk=LABEL=STORAGE quiet console=ttyS2,1500000 console=tty0"
+setenv bootargs "boot=LABEL=EMUELEC disk=LABEL=STORAGE quiet console=ttyS2,1500000"
 ```
+
+> **★别加 `console=tty0`★**：加了 fbcon 会绑上 framebuffer，之后每次模拟器
+> 启动/退出的空档，画面都会闪出 console 文字（`/etc/motd` 那一行）——
+> 那段时间没有任何东西持有画面，底下的 console 就露出来了。
+> 但它在 bring-up 阶段是真的有用：手边没有 USB-TTL 线时，那是唯一能在电视上
+> 看到 `Could not mount LABEL=EMUELEC` 这类 initramfs 错误的管道。
+> **适配期间加上、适配完拿掉**。
 
 `ttyS2` 是 RK3566 的除错串口，换别的板子要跟着改。载入位址
 （`0x02080000` / `0x08300000`）对 64 位 Rockchip 是通用的，至今没需要动过。
