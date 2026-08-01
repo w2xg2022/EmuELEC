@@ -13,7 +13,7 @@ on:
         required: false
         default: false
       seed_from:
-        description: '本型号首次建置时,从哪个兄弟型号 seed base(工具链+userland),仅重编设备/内核专属包。留空=不 seed,从零建。只对同 DEVICE(Amlogic-no)有效。例:X98mini'
+        description: '本型号首次建置时,从哪个兄弟型号 seed base(工具链+userland),仅重编设备/内核专属包。留空=不 seed,从零建。★只对同 DEVICE 的兄弟型号有效★(例:X98mini 与 E900V22C 同为 Amlogic-no 可互 seed;RK3566 家族目前只有 MD1000,没有兄弟可借,首次必须从零建)。例:X98mini'
         required: false
         default: ''
   # NOTE(w2xg2022): 月度cron暂时停用——目前还在适配期(平行编译/接力机制调试中)，
@@ -168,6 +168,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # NOTE(w2xg2022): ★型号 -> PROJECT/DEVICE 对照★(2026-08-01 新增)
+      # 顶层 env 的 PROJECT/DEVICE 原本写死 Amlogic-ce/Amlogic-no,于是不管 models
+      # 传什么,编出来的永远是 Amlogic 家族 —— RK3566(MD1000)根本编不出来。
+      # 这里按型号覆写(写进 GITHUB_ENV,后续步骤的 ${PROJECT}/${DEVICE} 自然吃到),
+      # 顶层 env 保留原值当预设,没列进来的型号行为完全不变。
+      #
+      # ★其余接力机制不必动★:build-state / kernel-state / artifact / release 的
+      # 标签本来就以 matrix.model 为键(build-state-${model}),所以各型号各有各的
+      # checkpoint,新增家族不会污染 Amlogic 那两台的状态。
+      #
+      # 加新型号就在下面 case 补一行。★DEVICE 要填 device 目录名★
+      # (RK3566 那台目录曾叫 MD1000、后来改名,写错不会报错、只会静默编错家族)。
+      - name: Resolve PROJECT/DEVICE for model
+        run: |
+          case "${{ matrix.model }}" in
+            MD1000)
+              P=Rockchip;    D=RK3566     ;;
+            X98mini|E900V22C)
+              P=Amlogic-ce;  D=Amlogic-no ;;
+            *)
+              P="${PROJECT}"; D="${DEVICE}"
+              echo "::warning::型号 ${{ matrix.model }} 不在对照表中,沿用预设 ${P}/${D}"
+              ;;
+          esac
+          echo "PROJECT=$P" >> "$GITHUB_ENV"
+          echo "DEVICE=$D"  >> "$GITHUB_ENV"
+          echo "型号 ${{ matrix.model }} -> PROJECT=$P DEVICE=$D"
+          if [ ! -d "projects/$P/devices/$D" ]; then
+            echo "::error::projects/$P/devices/$D 不存在 —— 对照表写错了"
+            exit 1
+          fi
+
       # NOTE(w2xg2022): linux(核心)与跟它「同批编译才安全」的驱动模块(gpu-aml/
       # media_modules-aml/各wifi-bt驱动等，判断依据：PKG_IS_KERNEL_PKG="yes"或
       # PKG_NEED_UNPACK="${LINUX_DEPENDS}"，即会用kernel_path/get_build_dir linux
@@ -179,7 +211,15 @@ jobs:
       # 只重编其中一部分。此步骤只算杂凑，不碰任何文件。
       - name: Compute kernel bundle hash
         run: |
-          KERNEL_PKGS="linux gpu-aml media_modules-aml aic8800-sdio ap6xxx-aml mt76 mt7668-wifi-bt RTL8189FS RTL8723DS-aml RTL8851BU RTL8852BE-aml RTL8852BS-aml RTW88 w1-aml wifi_dummy-aml"
+          # NOTE(w2xg2022): mali-bifrost 是 2026-08-01 补进来的 —— RK3566(MD1000) 的
+          # Mali kbase 外挂模组(rocknix/mali_kbase),PKG_IS_KERNEL_PKG="yes",
+          # 用 kernel_path 引用核心 build 目录编 .ko。不放进这份原子 bundle 的话,
+          # 内核从 bundle 还原、而它的 stamp 又留在一般 checkpoint 里 -> 不重编 ->
+          # vermagic 对不上,表现就是卡开机,正是这个机制要防的那件事。
+          # (上面「别动 KERNEL_PKGS」那条警告针对的是 common_drivers 那类纯源码、
+          #  没有 install_pkg 的包,加进去 bundle 会永远存不了;mali-bifrost 有
+          #  install_pkg(装 mali_kbase.ko),不属于那种情况。)
+          KERNEL_PKGS="linux gpu-aml media_modules-aml aic8800-sdio ap6xxx-aml mt76 mt7668-wifi-bt RTL8189FS RTL8723DS-aml RTL8851BU RTL8852BE-aml RTL8852BS-aml RTW88 w1-aml wifi_dummy-aml mali-bifrost"
           # ★★★ 2026-07-17 坐实的非决定性 bug + 修法(务必保留 sort)★★★
           # 症状:c156a8c 与 cfe25b8 的 kernel 档案「一字不差」(VM 上两 commit 算出同一个
           # 73e24e0b),runner 却给出不同 hash(4ca7429c vs 2ba8461a)→ bundle 永远命不中、
@@ -209,9 +249,20 @@ jobs:
           #  的 dts patch、common_drivers 的 BT patch 等仍走 patch 的部分。★不动 KERNEL_PKGS 本身★
           #  —— 那份还被 Save/Restore bundle 用来查 stamp/收 install_pkg,common_drivers 是纯源码
           #  没有 install_pkg,加进去会让 bundle 永远存不了。故只在 hash 这里补掃。)
-          for d in $(ls -d projects/Amlogic-ce/devices/*/packages/linux-drivers/amlogic/common_drivers \
-                            projects/Amlogic-ce/devices/*/patches/common_drivers \
-                            projects/Amlogic-ce/devices/*/patches/linux 2>/dev/null | sort); do
+          # NOTE(w2xg2022): ★补掃路径不要写死 Amlogic-ce★(2026-08-01)。
+          # 原本这段只列 projects/Amlogic-ce/... ,RK3566(MD1000)的内核相关目录
+          # 完全不在扫描范围 —— 改了 RK3566 的 kernel config / dts / kbase 套件,
+          # KERNEL_HASH 却纹丝不动,云端于是命中旧 bundle,改动静默不进固件。
+          # 那正是上面记的 X98mini AV dtb 同一个坑,只是换成整个 PROJECT 被漏掉。
+          # 改成扫所有 projects/*/devices/* ,新增家族不必再回来改这里。
+          # 另加 device 层的 linux-drivers(RK3566 的 mali-bifrost kbase 放这)与
+          # packages/linux(config、dts 真档、post_unpack 都在里面)。
+          for d in $(ls -d projects/*/devices/*/packages/linux-drivers/amlogic/common_drivers \
+                            projects/*/devices/*/packages/linux-drivers \
+                            projects/*/devices/*/packages/linux \
+                            projects/*/devices/*/patches/common_drivers \
+                            projects/*/devices/*/patches/linux \
+                            projects/*/devices/*/linux 2>/dev/null | sort); do
             [ -d "$d" ] || continue
             HASH_INPUT="$HASH_INPUT $(find "$d" -type f | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1)"
           done
@@ -478,7 +529,7 @@ jobs:
             fi
           fi
           (
-            PROJECT=${{ env.PROJECT }} DEVICE=${{ env.DEVICE }} SUBDEVICE=${{ matrix.model }} \
+            PROJECT="${PROJECT}" DEVICE="${DEVICE}" SUBDEVICE=${{ matrix.model }} \
             ARCH=${{ env.ARCH }} DISTRO=${{ env.DISTRO }} TMPDIR="${TMPDIR}" HOME="${HOME}" make image
           ) > build-${{ matrix.model }}.log 2>&1 &
           BUILD_PID=$!
@@ -551,7 +602,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          KERNEL_PKGS="linux gpu-aml media_modules-aml aic8800-sdio ap6xxx-aml mt76 mt7668-wifi-bt RTL8189FS RTL8723DS-aml RTL8851BU RTL8852BE-aml RTL8852BS-aml RTW88 w1-aml wifi_dummy-aml"
+          KERNEL_PKGS="linux gpu-aml media_modules-aml aic8800-sdio ap6xxx-aml mt76 mt7668-wifi-bt RTL8189FS RTL8723DS-aml RTL8851BU RTL8852BE-aml RTL8852BS-aml RTW88 w1-aml wifi_dummy-aml mali-bifrost"
           BD=$(ls -d build.*/ 2>/dev/null | head -1)
           if [ -z "$BD" ]; then echo "无build目录，跳过"; exit 0; fi
           MISSING=0
