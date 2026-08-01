@@ -33,11 +33,37 @@ PKG_BUILD_FLAGS="-lto"
 # 才發現USING_FBDEV實際上是控制EGL_Open()要不要用nullptr/EGL_DEFAULT_DISPLAY
 # (Mali原生DRM路徑)，不是「跳過EGL走純framebuffer」的意思，兩個flag要一起開
 # 才對，跟ppsspp(libretro core版本)package.mk的設定一致。
+# ★2026-08-01:补上 Vulkan 的显示平台 —— USE_VULKAN_DISPLAY_KHR=ON★
+#
+# 症状:PPSSPP 的「渲染引擎」下拉【变灰锁死在 OpenGL】,连主选单(没载入游戏)
+# 也不给选;ppsspp.ini 里写 GraphicsBackend = 3 (VULKAN) 也被忽略,
+# 而 FailedGraphicsBackends 却是空的(它根本没试到会失败的那一步)。
+#
+# 真因在上游 CMakeLists.txt:
+#     if(UNIX AND NOT (APPLE OR ANDROID) AND VULKAN)
+#         if(USING_X11_VULKAN)       -> VK_USE_PLATFORM_XLIB_KHR
+#         find_package(Wayland) ...  -> VK_USE_PLATFORM_WAYLAND_KHR
+#         if(USE_VULKAN_DISPLAY_KHR) -> VK_USE_PLATFORM_DISPLAY_KHR
+# 三条路我们【全断】:
+#   XLIB    = 上面刻意 OFF(没有 X11,这是对的,★别改成 ON★)
+#   WAYLAND = 预设 ON 但 find_package(Wayland) 找不到,自动停用(我们没装 Wayland)
+#   DISPLAY = option(USE_VULKAN_DISPLAY_KHR "..." ${USE_VULKAN_DISPLAY_KHR})
+#             —— ★预设值写的是它自己,等于不传就是 OFF★
+# 于是 Vulkan 后端程式码有编进去(二进位里找得到 GPU/Vulkan/*.cpp),侦测也报
+# "Found working Vulkan API!"(那段在 Common,永远会编),但【没有任何建立
+# surface 的平台巨集】,SDL 前端因此不把 Vulkan 列为可用后端 -> 选项变灰。
+#
+# DISPLAY_KHR 是直接对显示器输出、不需要视窗系统的那条路,正好对上:
+#   - Mali blob 匯出 VK_KHR_display(PPSSPP log 的 instance extension 清单里有)
+#   - SDL2 已编进 KMSDRM 的 Vulkan 后端(vkCreateDisplayPlaneSurfaceKHR)
+# ★三者缺一不可★:少了 SDL 那边就是 "Vulkan support ... not available in
+# current SDL video driver (KMSDRM)",少了 blob 那边就是 loader 载不到 ICD。
 PKG_CMAKE_OPTS_TARGET+="-DUSE_SYSTEM_FFMPEG=ON \
                         -DUSING_FBDEV=ON \
                         -DUSING_EGL=ON \
                         -DUSING_GLES2=ON \
                         -DUSING_X11_VULKAN=OFF \
+                        -DUSE_VULKAN_DISPLAY_KHR=ON \
                         -DUSE_DISCORD=OFF"
 
 if [ ${ARCH} == "aarch64" ]; then

@@ -61,6 +61,33 @@ case "${DEVICE}" in
     PKG_PATCH_DIRS="Amlogic"
     PKG_CMAKE_OPTS_TARGET+=" -DSDL_MALI=ON -DSDL_KMSDRM=OFF"
   ;;
+  'RK3566'|'MD1000')
+    # RK3566(MD1000)与上面那组同为 Rockchip/Mali,但用户空间用 device 层自带的
+    # libmali(g24p0),内核侧 kbase 由 device 层的 linux-drivers/mali-bifrost 提供。
+    #
+    # ★2026-08-01:分支名从 'MD1000' 改成 'RK3566' —— 原本是【死码】★
+    # device 目录改名后 DEVICE 已经是 RK3566,这个 case 再也没命中过,于是
+    # PKG_PATCH_DIRS="Rockchip"(Rockchip 专属 SDL patch)与 -DSDL_KMSDRM=ON
+    # 全都没套用。之所以没爆是因为 cmake 在 sysroot 里自动侦测到 libdrm/gbm,
+    # 把 KMSDRM 顺手开了 —— 是碰巧,不是设计。两个名字都留着,避免再踩一次。
+    # (机型名不一致的坑:运行期 EE_DEVICE 取自 /ee_arch,现在也是 RK3566。)
+    #
+    # ★SDL_VULKAN=ON 的理由★:PPSSPP 侦测到 Vulkan 驱动可用之后会【自己改用
+    # Vulkan】,不管 ppsspp.ini 里 GraphicsBackend 写什么;此时 SDL 若没有
+    # KMSDRM 的 Vulkan 后端就直接:
+    #     Error creating SDL window: Vulkan support is either not configured in
+    #     SDL or not available in current SDL video driver (KMSDRM) or platform
+    #     terminate called without an active exception   → exit 134
+    # 也就是说【连 OpenGL 都回不去】,PSP 整个不能用。判定方法:
+    #     strings libSDL2-2.0.so.0.* | grep -c KMSDRM_Vulkan_   # 0 = 没编进去
+    # ★只在本机型开★:Amlogic 那三台目前是验证过能跑的状态,没有 Vulkan 驱动,
+    # 没有理由为了这台去动它们的 SDL。
+    # 注:上面 PKG_CMAKE_OPTS_TARGET 里有 -DSDL_VULKAN=OFF,这里后附的 =ON
+    # 排在命令行更后面,cmake 取最后一个,故覆盖成立。
+    PKG_PATCH_DIRS="Rockchip"
+    PKG_CMAKE_OPTS_TARGET+=" -DSDL_KMSDRM=ON -DSDL_VULKAN=ON"
+    PKG_DEPENDS_TARGET+=" libdrm libmali vulkan-headers vulkan-loader"
+  ;;
   'OdroidGoAdvance'|'GameForce'|'RK356x'|'OdroidM1')
     PKG_PATCH_DIRS="Rockchip"
     PKG_CMAKE_OPTS_TARGET+=" -DSDL_KMSDRM=ON"
