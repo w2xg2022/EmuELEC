@@ -1,228 +1,194 @@
-# Rockchip dual boot (Armbian ⇄ EmuELEC)
+# Rockchip 双系统切换（Armbian ⇄ EmuELEC）
 
-Run **Armbian on eMMC and EmuELEC on a USB stick** on a Rockchip board whose
-stock u-boot cannot boot from USB. The vendor u-boot on eMMC — the one whose
-DRAM timings are known-good, so the board always comes up — `booti`s into
-EmuELEC. A single **TRIGGER file** decides which system boots, and either side
-can switch to the other with one command.
-
-Nothing here is tied to a specific model. It was developed and verified on the
-**MD1000 (RK3566)**; any RK board with the same constraint should work, and the
-only board-specific value in the whole setup is the serial console in the
-kernel command line (see [Adapting to another board](#adapting-to-another-board)).
-
-> Same mechanism as the [ROCKNIX setup](https://github.com/w2xg2022/rocknix/blob/next/docs/md1000-dual-boot.md)
-> (both are LibreELEC-derived, so the initramfs finds its devices from the
-> `boot=` / `disk=` kernel arguments), with EmuELEC's labels and filenames.
-
-## How it works
-
-At boot the u-boot script in `/boot/boot.cmd` checks the eMMC boot partition for
-`emuelec/TRIGGER`:
-
-- **TRIGGER present** → load `emuelec/KERNEL` + `emuelec/dtb` from eMMC and
-  `booti` into EmuELEC. Its rootfs comes off the USB stick (`LABEL=EMUELEC` /
-  `STORAGE`).
-- **TRIGGER absent** → Armbian boots as usual.
-
-> **Why the kernel has to live on eMMC**: the stock u-boot cannot see USB devices
-> at all, so it can never read the KERNEL on the stick. After the chainload the
-> kernel is running Linux, USB is driven properly, and the rootfs on the stick is
-> reachable.
-
-> **Why `booti` and not `kexec`**: kexec leaves the GPU/display in a dirty state
-> and the machine hard-freezes when the next system initialises DRM. u-boot
-> initialises the hardware cleanly; this is the only path that has been verified
-> to work.
-
-> ### ⚠️ What the fallback does and does not cover
+> English version: [rk-dual-boot.en.md](rk-dual-boot.en.md)
 >
-> "A failed chainload falls back to Armbian" is true **only inside u-boot**, and
-> only for two cases: **no TRIGGER**, or **no KERNEL on eMMC yet** (so `load`
-> fails).
+> ★脚本本身（`rk-dualboot/` 底下那几个档）的注释与萤幕输出一律为英文★，
+> 因为它们面向上游与其它 RK 机型的使用者。本文是那份文档的简体中文对照。
+
+给「**原厂 u-boot 扫不到 USB**」那类 Rockchip 板子的缝合方案：**eMMC 装 Armbian、
+U 盘装 EmuELEC**。由 eMMC 上那颗 DRAM 时序已校准、保开机的 vendor u-boot 用 `booti`
+链载 EmuELEC。一个 **TRIGGER 档**决定这次开哪个系统，两边都能一键互切。
+
+不绑机型。在 **MD1000（RK3566）** 上开发与验证，任何有同样限制的 RK 板子都适用；
+整套设定里唯一还绑板子的只有内核命令列里的串口，见
+[换到别的板子](#换到别的板子)。
+
+> 机制与 [ROCKNIX 那套](https://github.com/w2xg2022/rocknix/blob/next/docs/md1000-dual-boot.md)
+> 相同（两者同为 LibreELEC 血统，initramfs 都靠 `boot=` / `disk=` 内核参数找设备），
+> 只是换成 EmuELEC 的标签与档名。
+
+## 原理
+
+开机时 `/boot/boot.cmd` 这个 u-boot 脚本先检查 eMMC boot 分区上的 `emuelec/TRIGGER`：
+
+- **有 TRIGGER** → 从 eMMC 载入 `emuelec/KERNEL` + `emuelec/dtb`，`booti` 链载
+  EmuELEC，其 rootfs 来自 U 盘（`LABEL=EMUELEC` / `STORAGE`）。
+- **没 TRIGGER** → Armbian 照常开机。
+
+> **为什么内核必须放 eMMC**：原厂 u-boot 根本扫不到 USB 设备，永远读不到 U 盘上的
+> KERNEL。链载之后内核已经是 Linux，USB 由完整驱动接管，U 盘上的 rootfs 就拿得到了。
+
+> **为什么用 `booti` 不用 `kexec`**：kexec 会把 GPU/显示留成脏状态，下一个系统初始化
+> DRM 时整台硬冻结。u-boot 会干净地初始化硬件，这是唯一验证过能跑的路径。
+
+> ### ⚠️ 这个保底能挡什么、不能挡什么
 >
-> Once a kernel is on eMMC, `load` and `booti` both succeed and u-boot hands off
-> for good — it never comes back:
+> 「链载失败会落回 Armbian」这句话**只在 u-boot 阶段成立**，而且只涵盖两种情况：
+> **①没有 TRIGGER**；**②eMMC 上还没铺 KERNEL（`load` 失败）**。
+>
+> 一旦内核铺上 eMMC，`load` 与 `booti` 都必定成功，u-boot 就此交棒、**不会再回来**：
 >
 > ```
 > if test -e ${devtype} ${devnum} emuelec/TRIGGER; then
-> 	load ... emuelec/KERNEL              # reads eMMC, always succeeds once installed
+> 	load ... emuelec/KERNEL              # 读 eMMC,铺过就一定成功
 > 	load ... emuelec/dtb
-> 	booti ...                            # if it starts, it does not return
-> 	echo "falling back to Armbian"       # <- never reached
+> 	booti ...                            # 起得来就不 return
+> 	echo "falling back to Armbian"       # ← 走不到这一行
 > fi
 > ```
 >
-> So **pulling the USB stick does not rescue you**. The kernel will start and
-> then hang in the initramfs looking for a rootfs that is not there — black
-> screen, no network. That is a *kernel*-stage failure, outside u-boot's reach.
+> 所以**拔掉 U 盘救不回来**：内核会起来，然后卡在 initramfs 找不到 rootfs
+> （黑屏、无网络）。那已经是**内核阶段**的事，u-boot 管不着。
 >
-> **In practice**: the moment eMMC holds an unverified kernel, there is no
-> software way back to Armbian (TRIGGER lives on eMMC and only a running Linux
-> can delete it). **Keep a bootable Armbian SD card around during bring-up**
-> (u-boot generally prefers SD over eMMC; boot from it, mount the eMMC boot
-> partition, delete `emuelec/TRIGGER` or restore `boot.{cmd,scr}.armbian-orig`).
-> Otherwise the only way out is a MASKROM reflash.
+> **实际含义**：eMMC 上一旦放了没验证过的内核，就没有任何软件手段能切回 Armbian
+> （TRIGGER 在 eMMC 上，只有跑起来的 Linux 删得掉）。**bring-up 阶段务必准备一张
+> 可开机的 Armbian SD 卡**（u-boot 一般 SD 优先于 eMMC；从 SD 开机后挂 eMMC boot
+> 分区，删 `emuelec/TRIGGER` 或还原 `boot.{cmd,scr}.armbian-orig`）。否则只剩
+> MASKROM 重刷这条路。
 
-## One-command switching
+## 一键切换
 
-> Both scripts live in [`docs/rk-dualboot/`](rk-dualboot/).
+> 两个方向的脚本都在 [`docs/rk-dualboot/`](rk-dualboot/)。
 
-### ▶ Armbian → EmuELEC on USB
+### ▶ Armbian → U 盘 EmuELEC
 
-Run this in **Armbian** (needs network, stick plugged in):
+在 **Armbian** 里跑（需联网、U 盘要插着）：
 
 ```bash
 curl -L https://raw.githubusercontent.com/w2xg2022/EmuELEC/main/docs/rk-dualboot/switch-to-emuelec.sh | bash
 ```
 
-> No `curl`? Use `wget -qO- <same url> | bash`
+> 没 `curl` 就用 `wget -qO- <同一网址> | bash`
 
-The **first run installs everything automatically** — see
-[What the first run installs](#what-the-first-run-installs). Every run after
-that just syncs the payload, sets TRIGGER and reboots.
+**首次运行会自动完成一次性安装** —— 见[首次运行装了什么](#首次运行装了什么)。
+之后每次跑就只是「同步 payload、放 TRIGGER、重开」。
 
-### ◀ EmuELEC on USB → Armbian on eMMC
+### ◀ U 盘 EmuELEC → eMMC Armbian
 
-Run this in **EmuELEC** (needs network). **The path matters**: EmuELEC's `/usr`
-is a read-only squashfs, so save the script to the writable, persistent
-`/storage` first:
+在 **EmuELEC** 里跑（需联网）。**⚠️ 路径关键**：EmuELEC 的 `/usr` 是只读 squashfs，
+脚本要存到可写且持久的 `/storage` 再执行：
 
 ```bash
 curl -L https://raw.githubusercontent.com/w2xg2022/EmuELEC/main/docs/rk-dualboot/switch-to-armbian.sh -o /storage/switch-to-armbian.sh && sh /storage/switch-to-armbian.sh
 ```
 
-It mounts the eMMC boot partition, removes `emuelec/TRIGGER`, and reboots. Once
-saved to `/storage` you can just run `sh /storage/switch-to-armbian.sh` next
-time.
+它会挂 eMMC boot 分区、删掉 `emuelec/TRIGGER`、然后重开。存到 `/storage` 之后
+下次直接 `sh /storage/switch-to-armbian.sh` 就行。
 
-## Installing as permanent commands (optional)
+## 装成常驻命令（可选）
 
-| Script | Run it in | Install to (writable path) | Then switch with |
-|--------|-----------|----------------------------|------------------|
+| 脚本 | 在哪跑 | 装到（可写路径） | 之后切换命令 |
+|------|--------|------------------|--------------|
 | [`switch-to-emuelec.sh`](rk-dualboot/switch-to-emuelec.sh) | **Armbian** | `/usr/local/sbin/` | `switch-to-emuelec.sh` |
-| [`switch-to-armbian.sh`](rk-dualboot/switch-to-armbian.sh) | **EmuELEC** | `/storage/` (`/usr` is read-only) | `sh /storage/switch-to-armbian.sh` |
+| [`switch-to-armbian.sh`](rk-dualboot/switch-to-armbian.sh) | **EmuELEC** | `/storage/`（`/usr` 只读，必须放这） | `sh /storage/switch-to-armbian.sh` |
 
-## The chainload payload is exactly two files
+## 链载需要的配套档就只有两个
 
-u-boot reads only these from eMMC:
+u-boot 从 eMMC 只读这两个：
 
 ```
-<emmc-boot>/emuelec/KERNEL   the kernel image — the initramfs is inside it
-<emmc-boot>/emuelec/dtb      the device tree, stored under this fixed name
+<emmc-boot>/emuelec/KERNEL   内核映像 —— initramfs 就包在里面
+<emmc-boot>/emuelec/dtb      设备树,固定用这个档名存放
 ```
 
-The dtb is deliberately stored as plain `dtb` rather than under its original
-model-specific filename, so the u-boot block carries no board name at all.
+dtb 刻意存成朴素的 `dtb` 而不是原本那个带机型的档名，**这样 u-boot 链载块里就不带
+任何机型资讯**。
 
-Nothing else is needed. `SYSTEM`, `oemsplash-*.png`, `extlinux/` and the `*.md5`
-files are all read from `/flash` — the USB partition itself — by the initramfs,
-which only runs once the kernel is already up.
+其余一概不需要：`SYSTEM`、`oemsplash-*.png`、`extlinux/`、`*.md5` 全都是 initramfs
+起来之后从 `/flash`（也就是 U 盘本身）读的，那时内核早就跑起来了。
 
-> On the USB stick the dtb sits in the **root** of the boot partition, because
-> EmuELEC's `bootloader/mkimage` does `mcopy -o "$dtb" ::`. ROCKNIX keeps its
-> dtbs in a `device_trees/` subdirectory — do not carry that assumption over.
+> U 盘上的 dtb 在 boot 分区的**根目录**，因为 EmuELEC 的 `bootloader/mkimage` 是
+> `mcopy -o "$dtb" ::`。★ROCKNIX 是放在 `device_trees/` 子目录，别把那个假设搬过来★。
 
-## ★ Flashed a new image but still running the old kernel ★
+## ★刷了新映像却还在跑旧内核★
 
-This is the trap the whole setup has to defend against. The chainload reads the
-copy on **eMMC**; flashing a new image only replaces what is on the **USB
-stick**. Nothing pairs the two automatically. The machine then reports the new
-version in `/etc/os-release` while running the old kernel — and because the
-**initramfs is baked into KERNEL**, every kernel-level and initramfs-level change
-silently does nothing. It looks like your fix did not work.
+这是整套设计必须防的坑。链载读的是 **eMMC** 上那份，而刷新映像只换掉 **U 盘** 上那份，
+两者没有任何东西会自动配对。结果是 `/etc/os-release` 显示新版本、实际跑的却是旧内核 ——
+而且因为 **initramfs 包在 KERNEL 里面**，内核层与 initramfs 层的修改会全部静默失效，
+看起来就像「你的修正没生效」。
 
-Three defences, in the order they fire:
+三道防线，按触发顺序：
 
-1. **`emuelec-chainload-sync.service` on Armbian** (installed by
-   `switch-to-emuelec.sh`). Runs at **every boot and every shutdown**. The
-   shutdown run is the important one: the normal workflow is *boot Armbian →
-   write a new image to the stick → reboot into EmuELEC*, and a boot-time-only
-   sync would have run before the new image was written.
-2. **`switch-to-emuelec.sh`** syncs on **every** run, not only when eMMC has no
-   copy yet.
-3. **`md1000-kernel-sync.service` inside EmuELEC**
-   (`projects/Rockchip/devices/RK3566/packages/md1000-boot-fixes/`) does the same
-   from the other side, so once you have booted EmuELEC even once, later flashes
-   self-heal. Its log is `/emuelec/logs/kernel-sync.log`.
+1. **Armbian 上的 `emuelec-chainload-sync.service`**（由 `switch-to-emuelec.sh` 装）。
+   **开机与关机各跑一次**。★关机那次才是关键★：惯用流程是「开 Armbian → 写新映像到
+   U 盘 → 重开进 EmuELEC」，只在开机同步的话，那次同步发生在写映像**之前**，必然漏掉。
+2. **`switch-to-emuelec.sh` 每次运行都同步**，不是只在 eMMC 上还没副本时才做。
+3. **EmuELEC 里的 `md1000-kernel-sync.service`**
+   （`projects/Rockchip/devices/RK3566/packages/md1000-boot-fixes/`）从另一边做同样的事，
+   所以只要进过一次 EmuELEC，之后刷映像就会自愈。日志在 `/emuelec/logs/kernel-sync.log`。
 
-> Comparison is by **md5, never timestamps** — timestamps are skewed by the FAT
-> partition, by timezone handling and by however the image was written.
-> Manual check: compare `md5sum /flash/KERNEL` against the eMMC copy.
+> 判定一律用 **md5，绝不用时间戳** —— 时间戳会被 FAT 分区、时区处理、以及映像的写入
+> 方式弄失真。手工核对：`md5sum /flash/KERNEL` 与 eMMC 上那份比一比。
 
-> **A sync only takes effect on the NEXT boot** — u-boot loaded the old kernel
-> long before anything had a chance to sync. So after flashing a new image,
-> **reboot twice**. When verifying a kernel-level change, always confirm what you
-> are actually running first:
+> **同步完要下次开机才生效** —— u-boot 早在任何同步发生之前就已经载入旧内核了。
+> 所以刷完新映像要**重开两次**。★验证内核层的修改时，第一件事永远是先确认自己跑的是
+> 哪一颗★：
 >
 > ```bash
-> uname -a          # check the build timestamp, not just the version
+> uname -a          # 看建置时间戳,不是只看版本号
 > ```
 
-## What the first run installs
+## 首次运行装了什么
 
-`switch-to-emuelec.sh` does the following the first time, so you normally never
-have to do any of it by hand:
+`switch-to-emuelec.sh` 首次执行时自动做以下几步，一般无需手动：
 
-1. Installs [`emuelec-chainload-sync.sh`](rk-dualboot/emuelec-chainload-sync.sh)
-   to `/usr/local/sbin/` and enables
-   [`emuelec-chainload-sync.service`](rk-dualboot/emuelec-chainload-sync.service).
-2. Inserts [`boot-emuelec-block.txt`](rk-dualboot/boot-emuelec-block.txt)
-   **before** the first `setenv load_addr` line in `/boot/boot.cmd` (backing the
-   originals up as `*.armbian-orig`) and rebuilds it with
+1. 把 [`emuelec-chainload-sync.sh`](rk-dualboot/emuelec-chainload-sync.sh) 装到
+   `/usr/local/sbin/`，并启用
+   [`emuelec-chainload-sync.service`](rk-dualboot/emuelec-chainload-sync.service)。
+2. 把 [`boot-emuelec-block.txt`](rk-dualboot/boot-emuelec-block.txt) 插到
+   `/boot/boot.cmd` 第一处 `setenv load_addr` **之前**（原档备份为 `*.armbian-orig`），
+   再用下面这行重编：
    `mkimage -C none -A arm -T script -n 'flatmax load script' -d /boot/boot.cmd /boot/boot.scr`
-   (needs `mkimage`: `apt-get install -y u-boot-tools`).
-3. Copies `KERNEL` + the dtb from the USB EmuELEC partition to
-   `<emmc-boot>/emuelec/`.
+   （需要 `mkimage`：`apt-get install -y u-boot-tools`）
+3. 把 U 盘 EmuELEC 分区上的 `KERNEL` 与 dtb 复制到 `<emmc-boot>/emuelec/`。
 
-Where the names come from: `DISTRO_BOOTLABEL="EMUELEC"` and
-`DISTRO_DISKLABEL="STORAGE"` in `distributions/EmuELEC/options`;
-`KERNEL_NAME="KERNEL"` in `config/options`.
+档名的出处：`distributions/EmuELEC/options` 的 `DISTRO_BOOTLABEL="EMUELEC"` 与
+`DISTRO_DISKLABEL="STORAGE"`；`config/options` 的 `KERNEL_NAME="KERNEL"`。
 
-> **Upgrading from an older install**: earlier versions put the dtb on eMMC
-> under its model-specific filename and referenced that name in `boot.cmd`.
-> `switch-to-emuelec.sh` detects such a block, restores the pristine
-> `boot.cmd.armbian-orig`, reinstalls the current block and removes the stale
-> dtb copies — no manual editing needed, as long as the `*.armbian-orig` backups
-> are still present.
+> **从旧版升级**：早期版本把 dtb 按机型档名存在 eMMC 上，`boot.cmd` 里也是那个名字。
+> `switch-to-emuelec.sh` 会侦测到这种旧块，还原 `boot.cmd.armbian-orig`、重装当前的块、
+> 并清掉旧的 dtb 副本 —— 不用手动改，前提是 `*.armbian-orig` 备份还在。
 
-## Adapting to another board
+## 换到别的板子
 
-The scripts detect everything they need at runtime, so in the normal case there
-is nothing to edit. Two knobs exist for the exceptions:
+脚本需要的东西都是执行期侦测的，正常情况下一个字都不用改。两个例外有开关：
 
-| Setting | Where | When you need it |
-|---------|-------|------------------|
-| `EMMC_BOOT_DEV` | environment, default `/dev/mmcblk0p1` | the eMMC boot partition is not the first partition of `mmcblk0` |
-| `DTB_NAME` | environment | the image ships **more than one** dtb, so the right one cannot be inferred. With a single dtb it is picked automatically; with several the sync refuses to guess and lists the candidates |
+| 设定 | 在哪 | 什么时候需要 |
+|------|------|--------------|
+| `EMMC_BOOT_DEV` | 环境变数，预设 `/dev/mmcblk0p1` | eMMC boot 分区不是 `mmcblk0` 的第一个分区 |
+| `DTB_NAME` | 环境变数 | 映像里带了**不只一个** dtb，无法推断该用哪个。只有一个时自动认；有多个时同步会**拒绝猜测**并列出候选 —— 猜错 dtb 正是那种会让机器开不了机的静默错误 |
 
-The one genuinely board-specific line is the serial console in
-`boot-emuelec-block.txt`:
+唯一真正绑板子的是 `boot-emuelec-block.txt` 里的串口：
 
 ```
 setenv bootargs "boot=LABEL=EMUELEC disk=LABEL=STORAGE quiet console=ttyS2,1500000 console=tty0"
 ```
 
-`ttyS2` is the RK3566 debug UART. Adjust it for boards that use a different one.
-The load addresses (`0x02080000` / `0x08300000`) are generic for 64-bit Rockchip
-parts and have not needed changing.
+`ttyS2` 是 RK3566 的除错串口，换别的板子要跟着改。载入位址
+（`0x02080000` / `0x08300000`）对 64 位 Rockchip 是通用的，至今没需要动过。
 
-## Recovery
+## 保底 / 救援
 
-- **While Armbian still boots**: `rm /boot/emuelec/TRIGGER`, or restore the
-  backups:
+- **Armbian 还开得起来时**：`rm /boot/emuelec/TRIGGER`，或还原备份：
   ```bash
   cp /boot/boot.cmd.armbian-orig /boot/boot.cmd && cp /boot/boot.scr.armbian-orig /boot/boot.scr
   ```
-- **When EmuELEC will not boot (black screen, no network)**: pulling the USB
-  stick will **not** help (see the warning above). In increasing order of effort:
-  1. Boot from a **bootable Armbian SD card**, mount the eMMC boot partition,
-     delete `emuelec/TRIGGER` or restore the `*.armbian-orig` files. (u-boot
-     generally prefers SD over eMMC. Not verified on this board — recommended,
-     not guaranteed.)
-  2. **MASKROM reflash of Armbian.** Always works: the bootloader, the partition
-     table and the reserved areas are never touched by any of this.
-- **Dropping the USB stick entirely**: use `installtoemmc` to install EmuELEC
-  onto eMMC as a single-boot system. That wipes the Armbian rootfs but keeps
-  u-boot and the BOOT partition as the chainload host and as the MASKROM
-  recovery path. See [docs/emmc-install.md](emmc-install.md).
+- **EmuELEC 开不起来（黑屏、无网络）时**：★拔 U 盘没有用★（理由见上面的警告框）。
+  按代价由低到高：
+  1. 插一张**可开机的 Armbian SD 卡**，从 SD 开机后挂 eMMC boot 分区，删
+     `emuelec/TRIGGER` 或还原 `*.armbian-orig`。（u-boot 一般 SD 优先于 eMMC。
+     本机尚未实测，属推荐做法不是保证。）
+  2. **MASKROM 重刷 Armbian**。一定可行：bootloader、分区表、保留区全程没被动过。
+- **想彻底告别 U 盘**：用 `installtoemmc` 把 EmuELEC 装进 eMMC 变单系统。会抹掉
+  Armbian rootfs，但保留 u-boot 与 BOOT 分区作为链载宿主与 MASKROM 救援路径。
+  见 [docs/emmc-install.md](emmc-install.md)。

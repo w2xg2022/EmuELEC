@@ -124,7 +124,8 @@ PROJECT=Amlogic-ce DEVICE=Amlogic-no SUBDEVICE=E900V22C ARCH=aarch64 DISTRO=EmuE
   那类 RK 板子的缝合方案：eMMC 装 Armbian、U 盘装 EmuELEC，TRIGGER 档 + `booti` 链载，
   两边都能**一键互切**（curl 下载即执行）。Armbian 侧装了常驻服务，开机与关机各同步一次
   KERNEL/dtb，刷了新映像不会还在跑旧内核。在 MD1000(RK3566) 验证，不绑机型。
-  ★该文档与脚本全文为英文★（面向上游与其它 RK 机型使用者）。
+  英文版见 [rk-dual-boot.en.md](docs/rk-dual-boot.en.md)；★脚本本身的注释与萤幕输出一律英文★
+  （面向上游与其它 RK 机型使用者）。
 
 ## 参考仓库清单
 
