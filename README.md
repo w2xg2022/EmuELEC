@@ -120,6 +120,9 @@ PROJECT=Amlogic-ce DEVICE=Amlogic-no SUBDEVICE=E900V22C ARCH=aarch64 DISTRO=EmuE
 - [手柄按键说明](docs/controller-guide.md) —— **开箱即用的指定手柄**（附实物图：印刷是 Xbox 式、
   没有 Guide 键的那一类，插上即可玩，不必跑设定精灵）、其他手柄各自的表现；以及 A/B/X/Y 的
   三层处理（界面 / 热键 / 游戏内）、两种布局侦测、五组热键组合与游戏内位置对齐。
+- [MD1000 双系统切换（Armbian ⇄ EmuELEC）](docs/md1000-dual-boot.md) —— eMMC 装 Armbian、
+  U 盘装 EmuELEC 的缝合方案：TRIGGER 档 + `booti` 链载，两边都能**一键互切**（curl 下载即执行），
+  没插 U 盘自动落回 Armbian、绝不变砖。
 
 ## 参考仓库清单
 

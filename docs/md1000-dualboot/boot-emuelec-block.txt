@@ -1,0 +1,10 @@
+setenv ee_kernel_addr "0x02080000"
+setenv ee_fdt_addr "0x08300000"
+if test -e ${devtype} ${devnum} emuelec/TRIGGER; then
+	echo "=== EmuELEC chainload triggered ==="
+	load ${devtype} ${devnum} ${ee_kernel_addr} emuelec/KERNEL
+	load ${devtype} ${devnum} ${ee_fdt_addr} emuelec/rk3566-md1000.dtb
+	setenv bootargs "boot=LABEL=EMUELEC disk=LABEL=STORAGE quiet console=ttyS2,1500000 console=tty0"
+	booti ${ee_kernel_addr} - ${ee_fdt_addr}
+	echo "=== EmuELEC booti failed, falling back to Armbian ==="
+fi
