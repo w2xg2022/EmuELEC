@@ -9,7 +9,32 @@ MD1000（RK3566）的缝合方案：**eMMC 装 Armbian、U 盘装 EmuELEC**，eM
 eMMC 的 `/boot/boot.cmd`（u-boot 脚本）开机时先检查 eMMC boot 分区上的 `emuelec/TRIGGER`：
 
 - **有 TRIGGER** → 载入 eMMC 的 `emuelec/KERNEL` + dtb，`booti` 链载 EmuELEC（rootfs 从 U 盘 `LABEL=EMUELEC` / `STORAGE`）。
-- **没 TRIGGER**（或没插 U 盘导致 booti 失败）→ 落回 Armbian。**保底：绝不变砖。**
+- **没 TRIGGER** → 照常开 Armbian。
+
+> ### ⚠️ 这个保底能挡什么、不能挡什么（★别搞错★）
+>
+> 「链载失败会自动落回 Armbian」这句话**只在 u-boot 阶段成立**，而且只涵盖两种情况：
+> **①没有 TRIGGER**；**②eMMC 上还没铺 `emuelec/KERNEL`（`load` 失败）**。
+>
+> 一旦内核铺上 eMMC，`load` 必定成功、`booti` 也必定成功 —— u-boot 就此交棒、**不会再回来**：
+>
+> ```
+> if test -e ${devtype} ${devnum} emuelec/TRIGGER; then
+> 	load ... emuelec/KERNEL              # 从 eMMC 读，铺过就一定成功
+> 	load ... emuelec/rk3566-md1000.dtb
+> 	booti ...                            # 起得来就不 return
+> 	echo "falling back to Armbian"       # ← 走不到这一行
+> fi
+> ```
+>
+> 所以「拔掉 U 盘就能落回 Armbian」是**错的**：拔 U 盘只会让内核起来之后找不到 rootfs
+> 而卡在 initramfs（黑屏、无网络），那已经是**内核阶段**的事，u-boot 管不着。
+>
+> **实际含义**：eMMC 上的 KERNEL 一旦换成没验证过的版本，万一它开不起来，
+> 就没有任何软件手段可以切回 Armbian（TRIGGER 在 eMMC 上，只有跑起来的 Linux 删得掉）。
+> **bring-up 阶段务必准备一张可开机的 Armbian SD 卡**（u-boot 一般 SD 优先于 eMMC，
+> 开进去后挂 `/dev/mmcblk0p1` 删掉 `emuelec/TRIGGER`，或还原 `boot.{cmd,scr}.armbian-orig`），
+> 否则只剩 MASKROM 重刷这条路。
 
 > **为什么内核要放 eMMC**：MD1000 出厂的 u-boot **扫不到 USB 设备**，U 盘上的 KERNEL 它读不到。链载之后内核已经是 Linux，USB 由 Linux 完整驱动接管，rootfs（SYSTEM）留在 U 盘就没问题。
 
@@ -82,7 +107,11 @@ curl -L https://raw.githubusercontent.com/w2xg2022/EmuELEC/main/docs/md1000-dual
 
 ## 保底 / 救援
 
-- 没插 U 盘 → EmuELEC booti 失败 → **自动落回 Armbian**，绝不变砖。
-- 想还原成纯 Armbian：`cp /boot/boot.cmd.armbian-orig /boot/boot.cmd && cp /boot/boot.scr.armbian-orig /boot/boot.scr`。
+- **还能开进 Armbian 时**：`cp /boot/boot.cmd.armbian-orig /boot/boot.cmd && cp /boot/boot.scr.armbian-orig /boot/boot.scr`，或直接 `rm /boot/emuelec/TRIGGER`。
+- **EmuELEC 开不起来（黑屏 + 无网络）时**：★拔 U 盘没有用★（理由见上面「原理」那段的警告框）。
+  按代价由低到高：
+  1. 插一张**可开机的 Armbian SD 卡**，从 SD 开机后挂 `/dev/mmcblk0p1`，删 `emuelec/TRIGGER`
+     或还原 `*.armbian-orig`。（u-boot 一般 SD 优先于 eMMC；本机尚未实测，属推荐做法不是保证。）
+  2. **MASKROM 重刷 Armbian**（一定可行；bootloader / 分区表 / 保留区全程没动）。
 - 彻底救援：MASKROM 重刷 Armbian（bootloader / 分区表 / 保留区全程没动，一律可救）。
 - 想彻底告别 U 盘：用 `installtoemmc` 把 EmuELEC 装进 eMMC 变**单系统**（会抹掉 Armbian rootfs，保留 u-boot + BOOT 作 chainload 宿主与 MASKROM 救援），见 [docs/emmc-install.md](emmc-install.md)。

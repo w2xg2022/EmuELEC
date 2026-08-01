@@ -6,7 +6,11 @@
 #       首次运行本脚本会自动：
 #       ① 把 U 盘 EmuELEC 的 KERNEL + rk3566-md1000.dtb 铺到 eMMC /boot/emuelec/
 #       ② 往 /boot/boot.cmd 插入链载判断块、重编 boot.scr（自动备份 *.armbian-orig）
-# 安全：没 TRIGGER 时 Armbian 照常开机；链载失败（如拔了 U 盘）也落回 Armbian，绝不变砖。
+# ★安全边界（别搞错）★：没 TRIGGER 时 Armbian 照常开机 —— 这是唯一可靠的保底。
+#   但「链载失败会落回 Armbian」只涵盖「eMMC 上还没铺 KERNEL、load 失败」这一种；
+#   内核一旦铺上 eMMC，load 与 booti 必定成功、u-boot 就此交棒不会回来。
+#   所以【拔 U 盘救不回来】：内核会起来、然后卡在找不到 rootfs 的 initramfs(黑屏无网络)。
+#   ⇒ bring-up 阶段请备一张可开机的 Armbian SD 卡，否则只剩 MASKROM 重刷。
 set -e
 BASE=https://raw.githubusercontent.com/w2xg2022/EmuELEC/main/docs/md1000-dualboot
 [ "$(id -u)" = "0" ] || { echo "请用 root 运行"; exit 1; }
