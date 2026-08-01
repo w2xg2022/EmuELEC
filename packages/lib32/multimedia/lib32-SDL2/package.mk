@@ -63,6 +63,12 @@ case "${DEVICE}" in
     PKG_PATCH_DIRS+=" ${SDL2_DIRECTORY}/patches/Amlogic"
     PKG_CMAKE_OPTS_TARGET+=" -DSDL_MALI=ON -DSDL_KMSDRM=OFF"
   ;;
+  'RK3566'|'MD1000')
+    # 见 packages/multimedia/SDL2 里同名分支的说明
+    PKG_PATCH_DIRS+=" ${SDL2_DIRECTORY}/patches/Rockchip"
+    PKG_CMAKE_OPTS_TARGET+=" -DSDL_KMSDRM=ON"
+    PKG_DEPENDS_TARGET+=" lib32-libdrm lib32-libmali"
+  ;;
   'OdroidGoAdvance'|'GameForce'|'RK356x'|'OdroidM1')
     PKG_PATCH_DIRS+=" ${SDL2_DIRECTORY}/patches/Rockchip"
     PKG_CMAKE_OPTS_TARGET+=" -DSDL_KMSDRM=ON"

@@ -30,7 +30,8 @@ if [[ "${ARCH}" == "arm" ]]; then
 		PKG_MAKE_OPTS_TARGET=" platform=Odroidgoa"
 	fi
 	
-	if [ "${DEVICE}" == "RK356x" ] || [ "${DEVICE}" == "OdroidM1" ]; then
+	# MD1000 同为 RK3566,沿用 RK356x 的平台设定(否则会落到默认分支)
+	if [ "${DEVICE}" == "RK356x" ] || [ "${DEVICE}" == "OdroidM1" ] || [ "${DEVICE}" == "RK3566" ] || [ "${DEVICE}" == "MD1000" ]; then
 		PKG_MAKE_OPTS_TARGET=" platform=Odroidgoa-RK356x"
 	fi
 else

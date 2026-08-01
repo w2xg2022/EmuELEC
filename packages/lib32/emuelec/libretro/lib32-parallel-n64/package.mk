@@ -20,7 +20,9 @@ case ${DEVICE} in
   OdroidGoAdvance|GameForce)
     PKG_MAKE_OPTS_TARGET="platform=Odroidgoa"
   ;;
-  RK356x|OdroidM1)
+  RK356x|OdroidM1|RK3566|MD1000)
+    # MD1000 同为 RK3566,沿用 RK356x 的平台设定;
+    # 落到 *) 会变成不存在的 platform=MD1000
     PKG_MAKE_OPTS_TARGET="platform=Odroidgoa-RK356x"
   ;;
   *)

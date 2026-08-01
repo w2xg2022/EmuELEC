@@ -41,7 +41,7 @@ if [ "${PROJECT}" = "Amlogic-ce" ]; then
   PKG_PATCH_DIRS+=" ${RA_DIRECTORY}/patches/Amlogic"
   PKG_CONFIGURE_OPTS_TARGET+=" --disable-kms \
                            --enable-mali_fbdev"
-elif [[ "${DEVICE}" =~ ^(OdroidGoAdvance|GameForce|RK356x|OdroidM1)$ ]]; then
+elif [[ "${DEVICE}" =~ ^(OdroidGoAdvance|GameForce|RK356x|OdroidM1|RK3566|MD1000)$ ]]; then
   PKG_RKMISC="yes"
   PKG_DEPENDS_TARGET+=" lib32-libdrm lib32-librga"
   PKG_CONFIGURE_OPTS_TARGET+=" --enable-opengles3 \
