@@ -33,6 +33,24 @@ PKG_LONGDESC="strace is a diagnostic, debugging and instructional userspace util
 # tarball 自带的 configure 是上游用完整 autoconf-archive 生成的,直接用就正常。
 PKG_TOOLCHAIN="configure"
 
+# ★--enable-bundled=yes:用 strace 自带的内核头文件,不去对系统那份★
+#
+# 2026-08-02 云编译第四轮栽在这(163/577):
+#   io_uring.c:567: error: static assertion failed:
+#     "Unexpected size of arg.resv (sizeof(uint64_t) * 3 expected).
+#      --enabled-bundled=yes configure option may be used to work around that."
+#   (上游讯息里的 --enabled-bundled 是错字,真正的选项叫 --enable-bundled,
+#    取值 yes|no|check,意思是「是否使用 bundled linux kernel headers」。)
+# io_uring 的结构在 6.6 之后改过,strace 6.6 的静态断言写死了旧版布局。
+#
+# ★这是同一个模式的第二次★:上面记的 6.1 配 6.6 头文件挂(btrfs 常数被移除)
+# 才提到 6.6;现在 6.6 配 6.18 头文件又挂。与其一路追版本(6.18 太新,
+# strace 未必跟得上),不如让它用自带的头文件 —— 上游本来就为此提供了这个开关。
+# 副作用:它认得的 syscall/结构以 bundled 头文件为准,对除错工具而言可接受。
+#
+# ★VM 上不会重现★:strace 的 stamp 是 7/28 建的(换 6.18 内核之前),之后从未重编。
+PKG_CONFIGURE_OPTS_TARGET="--enable-bundled=yes"
+
 if [ "${TARGET_ARCH}" = x86_64 -o "${TARGET_ARCH}" = "aarch64" ]; then
-  PKG_CONFIGURE_OPTS_TARGET="--enable-mpers=no"
+  PKG_CONFIGURE_OPTS_TARGET+=" --enable-mpers=no"
 fi
