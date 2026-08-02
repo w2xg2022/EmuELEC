@@ -3,14 +3,34 @@
 # Copyright (C) 2019-present Team LibreELEC (https://libreelec.tv)
 
 PKG_NAME="libtool"
-PKG_VERSION="2.4.6"
-PKG_SHA256="e3bd4d5d3d025a36c21dd6af7ea818a2afcd4dfc1ea5a17b39d7854bcd0c06e3"
+PKG_VERSION="2.4.7"
+PKG_SHA256="04e96c2404ea70c590c546eba4202a4e12722c640016c12b9b2f1ce3d481e9a8"
 PKG_LICENSE="GPL"
 PKG_SITE="http://www.gnu.org/software/libtool/"
 PKG_URL="https://ftp.gnu.org/gnu/libtool/${PKG_NAME}-${PKG_VERSION}.tar.gz"
 PKG_DEPENDS_HOST="ccache:host autoconf:host automake:host intltool:host"
 PKG_DEPENDS_TARGET="toolchain"
 PKG_LONGDESC="A generic library support script."
+# NOTE(w2xg2022): 2026-08-02 从 2.4.6 提到 2.4.7。
+#
+# 2.4.6(2015) 配 automake 1.16.5 的 autoreconf 会挂:
+#   automake: error: cannot open < libltdl/ltdl.mk: No such file or directory
+# 2.4.6 提供的是 libltdl/Makefile.inc,而这个版本的 automake 期待 ltdl.mk;
+# 2.4.7 已改名(实测:2.4.7 有 ltdl.mk、没有 Makefile.inc)。
+#
+# ★不能改用 tarball 自带的 configure 绕过★:patches/ 里的
+# libtool-03-remove-help2man-dependency 改的是 Makefile.am,
+# 不重跑 autoreconf 那个 patch 等于没改。
+#
+# ★同时删掉 libtool-02-use_ld.patch★:它给 ltmain.sh 的旗标白名单加 -fuse-ld=*,
+# 而 2.4.7 上游已经内建(build-aux/ltmain.sh:7564,注解 Linker select flags for GCC),
+# 套用会 Hunk FAILED。另两个 patch 已实地依序试套确认 APPLIED。
+#
+# 云编译第五轮(176/577)栽在这。VM 不重现:libtool 的 stamp 是 7/27 建的。
+# (顺带更正一条旧结论:记忆里写「runner 必用 22.04,24.04 会让 libtool 挂」——
+#  本次 build job 确实跑在 ubuntu-22.04 却照样挂,而且 autoreconf 用的是
+#  【工具链自己的】automake 不是系统的,所以 host OS 版本本来就不是关键。)
+
 PKG_TOOLCHAIN="autotools"
 
 PKG_CONFIGURE_OPTS_HOST="--enable-static --disable-shared"
