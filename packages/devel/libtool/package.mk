@@ -31,7 +31,15 @@ PKG_LONGDESC="A generic library support script."
 #  本次 build job 确实跑在 ubuntu-22.04 却照样挂,而且 autoreconf 用的是
 #  【工具链自己的】automake 不是系统的,所以 host OS 版本本来就不是关键。)
 
-PKG_TOOLCHAIN="autotools"
+# ★PKG_TOOLCHAIN 从 autotools 改成 configure(2026-08-02)★
+# autotools 会跑 autoreconf -> libtoolize,而工具链里那支 libtoolize 是
+# 【上一次建置留下的旧版】。用 2.4.6 的 libtoolize 处理 2.4.7 的原始码时,
+# 它会把 2.4.7 自带的 libltdl/ltdl.mk 洗掉 -> automake 报
+#   cannot open < libltdl/ltdl.mk: No such file or directory
+# 典型 bootstrap 鸡生蛋(要建 2.4.7 得先有 2.4.7 的 libtoolize)。
+# tarball 自带的 configure/Makefile.in 是上游用完整 autotools 生成的,直接用即可;
+# 两个 patch 都已改成只动自带档(ltmain.sh / Makefile.in),不需要重新生成。
+PKG_TOOLCHAIN="configure"
 
 PKG_CONFIGURE_OPTS_HOST="--enable-static --disable-shared"
 

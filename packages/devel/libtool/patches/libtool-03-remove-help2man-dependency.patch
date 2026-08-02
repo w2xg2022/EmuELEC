@@ -1,26 +1,36 @@
-diff -Naur a/Makefile.am b/Makefile.am
---- a/Makefile.am	2015-01-20 07:34:33.000000000 -0800
-+++ b/Makefile.am	2015-10-27 11:16:49.027497480 -0700
-@@ -406,22 +406,6 @@
- 	$(AM_V_GEN)$(MAKEINFO) -P '$(srcdir)/doc' --no-headers \
- 	    $(MAKEINFOFLAGS) -o '$@' '$(notes_texi)'
- 
--dist_man1_MANS		= $(libtool_1) $(libtoolize_1)
--MAINTAINERCLEANFILES	+= $(dist_man1_MANS)
--update_mans = \
--  PATH=".$(PATH_SEPARATOR)$$PATH"; export PATH; \
--  $(HELP2MAN) --output='$@'
--
--# It's wrong to make distributed files (e.g. $(libtool_1)) rely on
--# files created in the build tree, so instead we regenerate the
--# manual pages if the sources for the build-tree files we want to
--# run have changed.
+移除手册页的【重新生成】规则,改在 Makefile.in 上动刀(原本改的是 Makefile.am)。
+
+为什么不能再改 Makefile.am:改它就必须重跑 autoreconf,而 autoreconf 会呼叫
+工具链里的 libtoolize —— 那支的版本是【上一次建置留下来的旧版】。用 2.4.6 的
+libtoolize 去处理 2.4.7 的原始码时,它会把 2.4.7 自带的 libltdl/ltdl.mk 洗掉,
+接着 automake 就报:
+    automake: error: cannot open < libltdl/ltdl.mk: No such file or directory
+这是标准的 bootstrap 鸡生蛋:要建 2.4.7 得先有 2.4.7 的 libtoolize。
+(2026-08-02 在 VM 上重现并确认:解开的 tarball 里 ltdl.mk 本来存在,
+ 跑完 libtoolize 之后 libltdl/ 里 ltdl.mk 与 Makefile.inc 【两个都不见了】。)
+
+改成直接改 Makefile.in 之后,package.mk 就能用 PKG_TOOLCHAIN=configure
+完全跳过 autoreconf,鸡生蛋问题随之消失。
+
+保留 dist_man1_MANS(手册页照样安装)——tarball 本来就附了 doc/libtool.1 与
+doc/libtoolize.1,只是把「依 ltmain.sh 时间戳重新生成」那两条规则拿掉。
+★这一步是必要的★:patches/libtool-01 会改 build-aux/ltmain.sh,连带更新它的
+mtime,于是 $(libtool_1): $(ltmain_sh) 判定过期就会去呼叫 help2man,
+而工具链里没有 help2man。
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -2423,10 +2423,10 @@
+ # files created in the build tree, so instead we regenerate the
+ # manual pages if the sources for the build-tree files we want to
+ # run have changed.
 -$(libtool_1): $(ltmain_sh)
 -	$(AM_V_GEN)$(update_mans) --help-option=--help-all libtool
 -$(libtoolize_1): $(libtoolize_in)
 -	$(AM_V_GEN)$(update_mans) libtoolize
--
--
- ## ------------- ##
- ## Installation. ##
- ## ------------- ##
++# EmuELEC: man page regeneration rules removed -- the tarball already ships
++# doc/libtool.1 and doc/libtoolize.1, and we have no help2man in the toolchain.
++# (Patching build-aux/ltmain.sh bumps its mtime, which would otherwise make
++#  these rules fire.)
+ 
+ install-data-local: $(lt_Makefile_in) install-scripts-local
+ 	@$(NORMAL_INSTALL)
