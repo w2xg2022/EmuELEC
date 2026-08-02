@@ -33,9 +33,9 @@
 
 | 层 | 场景 | 判断依据 | 一句话 |
 |---|---|---|---|
-| <nobr>第一层</nobr> | **ES4All 界面**（A=确认、B=返回…） | **按键印刷** | 按你手柄印的字母走 |
-| <nobr>第二层</nobr> | **RA / 独立模拟器 热键 / 菜单**（退出、存档、呼出菜单…） | **按键印刷**（同第一层） | 约定俗成，按印的字母认；<br>RA 与独立模拟器**都已随 ES 透传**，但两者机制不同 |
-| <nobr>第三层</nobr> | **游戏内操作** | **按键位置** | 按几何位置对齐，跟熟悉感走 |
+| <nobr>第一层</nobr> | <nobr>**ES4All 界面**</nobr><br><nobr>（A=确认、B=返回…）</nobr> | <nobr>**按键印刷**</nobr> | <nobr>按你手柄印的字母走</nobr> |
+| <nobr>第二层</nobr> | <nobr>**RA / 独立模拟器**</nobr><br><nobr>**热键 / 菜单**</nobr><br><nobr>（退出、存档、呼出菜单…）</nobr> | <nobr>**按键印刷**</nobr><br><nobr>（同第一层）</nobr> | <nobr>约定俗成，按印的字母认；</nobr><br><nobr>RA 与独立模拟器**都已随 ES 透传**，</nobr><br><nobr>但两者机制不同</nobr> |
+| <nobr>第三层</nobr> | <nobr>**游戏内操作**</nobr> | <nobr>**按键位置**</nobr> | <nobr>按几何位置对齐，跟熟悉感走</nobr> |
 
 > **为什么第二层按印刷、第三层按位置，两层还能共存？**
 > 在 **RA** 上它们是分开的两套设定，互不干扰。但**独立模拟器（PPSSPPSDL / flycast）
@@ -66,11 +66,11 @@
 
 | 组合键 | 功能 | RA | 独立模拟器 |
 |---|---|---|---|
-| **热键 + START** | 退出游戏 | ✅ | ✅ |
-| **热键 + R1**（右肩键） | 保存即时存档 | ✅ | ✅ |
-| **热键 + L1**（左肩键） | 读取即时存档 | ✅ | ✅ |
-| **热键 + X**（印着 X 那颗） | 呼出菜单 | ✅ | ✅ |
-| **热键 + Y** | 切换 FPS 帧率显示 | ✅ | ❌ 模拟器本身没有这个功能 |
+| <nobr>**热键 + START**</nobr> | <nobr>退出游戏</nobr> | ✅ | ✅ |
+| <nobr>**热键 + R1**（右肩键）</nobr> | <nobr>保存即时存档</nobr> | ✅ | ✅ |
+| <nobr>**热键 + L1**（左肩键）</nobr> | <nobr>读取即时存档</nobr> | ✅ | ✅ |
+| <nobr>**热键 + X**（印着 X 那颗）</nobr> | <nobr>呼出菜单</nobr> | ✅ | ✅ |
+| <nobr>**热键 + Y**</nobr> | <nobr>切换 FPS 帧率显示</nobr> | ✅ | <nobr>❌ 模拟器本身没有</nobr><br><nobr>这个功能</nobr> |
 
 说明：
 
@@ -84,10 +84,10 @@
 
 | | RA | 独立模拟器（PPSSPPSDL / flycast） |
 |---|---|---|
-| 组合键怎么写 | RetroArch 自己的 autoconfig | 我们的 joy 脚本按 `es_input.cfg` 生成 |
-| 键的表示法 | **实体按键编号** | flycast：**实体按键编号**<br>PPSSPP：**SDL 语义码**（如 `10-196`=SELECT） |
-| 要不要「翻译」 | 不用 | flycast 不用；**PPSSPP 要** |
-| 菜单与游戏内 | **可以分开**（两套设定） | **不能分开**（共用同一份映射） |
+| <nobr>组合键怎么写</nobr> | <nobr>RetroArch 自己的 autoconfig</nobr> | <nobr>我们的 joy 脚本</nobr><br><nobr>按 `es_input.cfg` 生成</nobr> |
+| <nobr>键的表示法</nobr> | <nobr>**实体按键编号**</nobr> | <nobr>flycast：**实体按键编号**</nobr><br><nobr>PPSSPP：**SDL 语义码**</nobr><br><nobr>（如 `10-196`=SELECT）</nobr> |
+| <nobr>要不要「翻译」</nobr> | <nobr>不用</nobr> | <nobr>flycast 不用；**PPSSPP 要**</nobr> |
+| <nobr>菜单与游戏内</nobr> | <nobr>**可以分开**</nobr><br><nobr>（两套设定）</nobr> | <nobr>**不能分开**</nobr><br><nobr>（共用同一份映射）</nobr> |
 
 这张表解释了两类常见现象：
 
