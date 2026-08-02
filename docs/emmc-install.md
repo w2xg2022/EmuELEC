@@ -1,8 +1,20 @@
 # 写入 eMMC（内置存储双开机）说明
 
 > 面向：把从 SD/U 盘运行的 EmuELEC 装进电视盒子的**内部 eMMC**，之后不插卡也能开机。
-> 统一脚本：`/usr/bin/installtoemmc.sh`（源码 `packages/sx05re/emuelec/bin/installtoemmc.sh`）。
 > 一支程序 + 内置 board 表，加机型只加一条 case，**不要一个型号一支脚本**。
+
+> ★**脚本已经不在本仓库了**★（2026-08-02 搬走）。它现在随 **es4all-profiles** 发行：
+>
+> | 档 | 位置 | 角色 |
+> |---|---|---|
+> | `installtoemmc-engine.sh` | `E/_common/bin/` | **引擎**：分区/格式化/复制/改开机设定 + board 表 |
+> | `installtoemmc.sh` | `E/_common/bin/` | **薄包装**：ES 呼叫的入口，一键喂 YES、kmscon 显示过程、写日志 |
+> | `emmc-layout.conf` | `E/<机型>/storage-config/es4all/` | **机型配方**：`BOARD=` 一行；★它在不在＝选单显不显示★ |
+>
+> **为什么搬**：改一行分区逻辑却要跑数小时云编译 + 使用者重刷机，成本完全不成比例；
+> 走 profiles 是「push → 设备下次开机自己拉」。
+> ⚠️ **别为了「保底」在固件里放回一份** —— 两份会各自演化，分岔了没人发现，
+> 直到有人的盒子变砖。本文保留下来是因为**原理与踩过的坑**仍然适用。
 
 ## 0. 一句话结论
 ```sh
@@ -103,10 +115,18 @@ fi
 
 ### ⚠️ 装完就回不去 U 盘开机
 
-这台的 u-boot **读不到 U 盘**。一直以来从 U 盘跑 EmuELEC，靠的是 eMMC 上 Armbian 的
-`/boot` 把内核载起来（链载）。新方案从 p1 起整颗抹掉，那个 `/boot` 没了之后，
-**插回 U 盘也开不了机**，救援只剩 MASKROM 重刷。
-bootloader 保留区（DRAM 时序已校准）全程不碰，所以 MASKROM 这条路一定还在。
+一直以来从 U 盘跑 EmuELEC，靠的是 eMMC 上 Armbian 的 `/boot` 把内核载起来（链载）。
+新方案从 p1 起整颗抹掉，那个 `/boot` 没了之后，**插回 U 盘也开不了机**。
+
+★**别再说「这颗 u-boot 读不到 U 盘」**★——那是错的（旧笔记里还这么写）。实读
+bootloader 得到 `boot_targets = nvme mmc1 mmc0 usb0 pxe dhcp`，`bootcmd_usb0`
+**是编进去的**；USB 只是排在 `mmc0` **后面**，eMMC 一旦有东西可开机就永远轮不到它。
+结果一样，理由不同，而理由决定了救援手段：
+
+| 救援 | 说明 |
+|---|---|
+| 可开机的 SD/TF 卡 | `mmc1`（卡槽 `fe2b0000.mmc`）排在 `mmc0`（eMMC）**之前**，插卡就盖过 eMMC。**前提是这台机壳上真有卡槽** —— 内核有 probe 到控制器不等于外壳上有孔 |
+| MASKROM 重刷 | 一定有效。bootloader 保留区（DRAM 时序已校准）全程不碰，就是为了保住这条 |
 
 安装器的确认画面会把这段用大写讲明白，**这跟锁机盒子那两台的语意完全不同**，别照抄印象。
 
