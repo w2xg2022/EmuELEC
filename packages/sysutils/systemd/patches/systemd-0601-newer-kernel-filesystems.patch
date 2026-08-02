@@ -1,0 +1,34 @@
+systemd 252.6 (2022) 的 check-filesystems.sh 会把「内核标头里有、但 systemd 自己
+的 filesystems-gperf.gperf 没列」的档案系统当成错误,直接中止 meson configure:
+
+  ../src/basic/meson.build:392:8: ERROR: Problem encountered:
+      Unknown filesystems defined in kernel headers:
+  Filesystem found in kernel header but not in filesystems-gperf.gperf: PID_FS_MAGIC
+  Filesystem found in kernel header but not in filesystems-gperf.gperf: BCACHEFS_SUPER_MAGIC
+
+这两个都是 systemd 252.6 发布【之后】才进内核的:
+  PID_FS_MAGIC          pidfs,     Linux 6.9 起
+  BCACHEFS_SUPER_MAGIC  bcachefs,  Linux 6.7 起
+
+RK3566(MD1000)用 mainline 6.18,标头里自然有它们;Amlogic 那几台用 5.15/6.6
+标头里没有,这个 regex 永远不会命中,所以对它们完全无影响。
+
+沿用 0600(SDCARDFS)那笔的做法:加进略过清单,而不是去补 gperf ——
+systemd 不认得这两个档案系统的名字并无实害,补 gperf 则要连带改 C 端的列举。
+
+★本档必须排在 0600 之后套用★(靠档名序):上下文那一行是 0600 改过的状态。
+★VM 上不会重现这个错★:systemd 的 stamp 是换 6.18 内核【之前】建的,
+从来没有重新 configure 过 —— 又一次「本地快取把缺陷盖住、上云端才现形」。
+
+--- a/src/basic/check-filesystems.sh
++++ b/src/basic/check-filesystems.sh
+@@ -24,7 +24,8 @@
+         # mtd_inode was removed in 2015
+         # futexfs was removed in 2018
+         # sdcardfs is Android thing
+-        if [[ "$fs" =~ ^(STACK_END_MAGIC|MTD_INODE_FS_MAGIC|FUTEXFS_SUPER_MAGIC|SDCARDFS_SUPER_MAGIC)$ ]]; then
++        # pidfs (6.9+) and bcachefs (6.7+) postdate this systemd release
++        if [[ "$fs" =~ ^(STACK_END_MAGIC|MTD_INODE_FS_MAGIC|FUTEXFS_SUPER_MAGIC|SDCARDFS_SUPER_MAGIC|PID_FS_MAGIC|BCACHEFS_SUPER_MAGIC)$ ]]; then
+             continue
+         fi
+         echo "Filesystem found in kernel header but not in $(basename "$filesystems_gperf"): $fs";
