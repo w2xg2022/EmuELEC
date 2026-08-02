@@ -137,24 +137,48 @@ board_config() {
         # RK3566 board with a plain GPT eMMC and OUR OWN u-boot -- nothing like
         # the locked Amlogic boxes above, so METHOD is "repartition".
         #
-        # u-boot on this board CANNOT enumerate USB, so the kernel has to live
-        # on the eMMC and is chainloaded: p1 holds boot.scr plus
-        # emuelec/{KERNEL,dtb,TRIGGER}. That is why p1 is kept untouched.
+        # The eMMC is given THE SAME THREE-PARTITION LAYOUT AS THE USB/SD IMAGE:
         #
-        # Two things are never touched, and they are what makes recovery
-        # always possible:
-        #   1) the reserved area holding the vendor u-boot (its DRAM timings
-        #      are calibrated for this board -- replacing it is high risk)
-        #   2) p1 BOOT, the chainload host
-        # Everything from p2 on (the Armbian rootfs) is replaced by
-        # p2 EMUELEC (FAT32, SYSTEM+kernel) and p3 STORAGE (ext4, the rest).
+        #   p1 EMUELEC (FAT32, 2GiB)  KERNEL + SYSTEM + dtb + extlinux
+        #   p2 STORAGE (ext4,  6GiB)  persistent /storage
+        #   p3 EEROMS  (ext4,  rest)  the ROM library, mounted at /storage/roms
         #
-        # Modelled on the ROCKNIX installtoemmc for the same board
-        # (es4all dist/rocknix/sources/installtoemmc), verified on real hardware.
+        # ★Why the layout must be exactly this, and in this order★
+        # eemount (the upstream ROM mounter) does NOT look EEROMS up by label
+        # first. Its order is (src/eemount.c):
+        #   1. the partition backing /storage/.update
+        #   2. THE DEVICE NAME OF /flash WITH ITS LAST CHARACTER REPLACED BY '3'
+        #   3. only as a "last hope": LABEL=EEROMS
+        # Step 2 is plain string surgery, so with /flash on p1 it lands on p3 --
+        # correct only if the ROM partition really is the third one. An earlier
+        # layout kept an extra boot partition in front (p1 BOOT / p2 EMUELEC /
+        # p3 STORAGE); step 2 then mounted STORAGE over /storage/roms and ES
+        # showed no games at all. Adding a fourth EEROMS partition does NOT fix
+        # that -- step 2 succeeds before the label is ever consulted.
+        # So: keep the image layout, and the heuristic is right by construction.
+        #
+        # ★Boot chain★
+        # No chainloading and no boot.scr: this u-boot has scan_dev_for_extlinux
+        # (verified by dumping the bootloader area), it scans p1 when no
+        # partition is flagged bootable, and the EmuELEC image already ships
+        # /flash/extlinux/extlinux.conf. The installer only has to rewrite the
+        # UUIDs in that file to point at the freshly created partitions.
+        # Using UUIDs (not labels) also removes the old ambiguity of having the
+        # USB stick and the eMMC both carrying the labels EMUELEC/STORAGE.
+        #
+        # ★What survives, and what does not★
+        # Untouched: the reserved area holding the vendor u-boot (its DRAM
+        # timings are calibrated for this board -- replacing it is high risk).
+        # Erased: EVERYTHING from the first partition on, i.e. the whole Armbian
+        # install INCLUDING its /boot. After this the box no longer boots from
+        # USB either (that path relied on Armbian's /boot chainloading us), so
+        # the only way back is re-flashing over MASKROM.
         METHOD="repartition"
         EMMC_DEV="/dev/mmcblk0"
         COMPAT="rockchip,rk3566-md1000"
-        EE_SIZE_GIB=2          # p2 EMUELEC; the rest of the disk becomes STORAGE
+        EE_SIZE_GIB=2          # p1 EMUELEC, same as the USB image
+        ST_SIZE_GIB=6          # p2 STORAGE, same as the USB image
+                               # p3 EEROMS takes whatever is left
         DESC="MD1000 (Rockchip RK3566 TV box, 32GB eMMC)"
         ;;
     *)
@@ -169,8 +193,9 @@ board_config() {
 # ---------------------------------------------------------------------------
 install_repartition() {
     local EMMC="$EMMC_DEV"
-    local FLASH_SRC DISKSZ LAST_USABLE P2_START EE_SIZE_S EE_END ST_START ST_GIB part
-    local BK n it e DTB
+    local FLASH_SRC DISKSZ LAST_USABLE P1_START EE_SIZE_S EE_END part
+    local ST_START ST_SIZE_S ST_END RO_START RO_GIB
+    local BK n it e DTB EE_UUID ST_UUID
 
     [ -b "$EMMC" ] || die "${EMMC} not found."
 
@@ -183,13 +208,14 @@ install_repartition() {
         *) die "Unexpected /flash source: ${FLASH_SRC} (expected a USB device /dev/sd*)." ;;
     esac
     [ -f /flash/SYSTEM ] || die "/flash/SYSTEM does not exist - is this a running EmuELEC?"
-    # EmuELEC's automounter mounts the Armbian rootfs it finds on p2 under
-    # /var/media (e.g. /var/media/ROOTFS). Since we are about to erase that
-    # partition anyway, unmount it ourselves instead of dead-ending the user
-    # with "unmount it first" for something they never mounted.
+    # EmuELEC's automounter mounts the Armbian partitions it finds under
+    # /var/media (e.g. /var/media/BOOT, /var/media/ROOTFS). Since we are about
+    # to erase them anyway, unmount them ourselves instead of dead-ending the
+    # user with "unmount it first" for something they never mounted.
     # Anything mounted OUTSIDE /var/media is not ours to touch -> refuse.
+    # p1 is included now: unlike the old chainload layout, it is erased too.
     local mp
-    for part in "${EMMC}p2" "${EMMC}p3"; do
+    for part in "${EMMC}p1" "${EMMC}p2" "${EMMC}p3" "${EMMC}p4"; do
         while :; do
             mp=$(awk -v d="$part" '$1==d{print $2; exit}' /proc/mounts)
             [ -n "$mp" ] || break
@@ -214,39 +240,53 @@ install_repartition() {
     [ -n "$DISKSZ" ] || die "Cannot read the size of ${EMMC} from sysfs."
     LAST_USABLE=$(( DISKSZ - 34 ))          # leave room for the secondary GPT
 
-    P2_START=$(parted -s "$EMMC" unit s print 2>/dev/null | \
-               awk '/^[[:space:]]*2[[:space:]]/{gsub(/s/,"",$2); print $2}')
-    [ -n "${P2_START:-}" ] || die "Could not read the start sector of p2."
+    # Start the new p1 exactly where the existing first partition starts, so the
+    # bootloader reserved area in front of it is never touched. Do NOT hardcode
+    # a sector here: read it back from the disk we are actually looking at.
+    P1_START=$(parted -s "$EMMC" unit s print 2>/dev/null | \
+               awk '/^[[:space:]]*1[[:space:]]/{gsub(/s/,"",$2); print $2}')
+    [ -n "${P1_START:-}" ] || die "Could not read the start sector of p1."
+    # Anti-brick sanity: the vendor u-boot lives in the first few MiB. If p1
+    # started suspiciously early, creating a partition there would eat it.
+    [ "$P1_START" -ge 32768 ] || die "p1 starts at ${P1_START}s, too close to the bootloader area. Refusing."
 
     EE_SIZE_S=$(( EE_SIZE_GIB * 1024 * 1024 * 1024 / 512 ))
-    EE_END=$(( P2_START + EE_SIZE_S - 1 ))
+    ST_SIZE_S=$(( ST_SIZE_GIB * 1024 * 1024 * 1024 / 512 ))
+    EE_END=$(( P1_START + EE_SIZE_S - 1 ))
     ST_START=$(( EE_END + 1 ))
-    [ "$ST_START" -lt "$LAST_USABLE" ] || die "Not enough room left for STORAGE."
-    ST_GIB=$(( (LAST_USABLE - ST_START) / 2048 / 1024 ))
+    ST_END=$(( ST_START + ST_SIZE_S - 1 ))
+    RO_START=$(( ST_END + 1 ))
+    [ "$RO_START" -lt "$LAST_USABLE" ] || die "Not enough room left for EEROMS."
+    RO_GIB=$(( (LAST_USABLE - RO_START) / 2048 / 1024 ))
 
     cat <<EOF
 ================================================================
  EmuELEC eMMC installer   --   board: ${BOARD}
  ${DESC}
 ================================================================
- Target ${EMMC}:
+ Target ${EMMC}  --  same three-partition layout as the USB image:
 
-   p1                      KEPT (chainload: boot.scr + emuelec/KERNEL)
-   p2  ${EE_SIZE_GIB}GiB  (${P2_START}s..${EE_END}s)   -> FAT32, label EMUELEC
-   p3  ~${ST_GIB}GiB (${ST_START}s..${LAST_USABLE}s) -> ext4,  label STORAGE
+   p1  ${EE_SIZE_GIB}GiB  (${P1_START}s..${EE_END}s)  -> FAT32, label EMUELEC
+   p2  ${ST_SIZE_GIB}GiB  (${ST_START}s..${ST_END}s)  -> ext4,  label STORAGE
+   p3  ~${RO_GIB}GiB (${RO_START}s..${LAST_USABLE}s) -> ext4,  label EEROMS
 
- EVERYTHING ON ${EMMC} AFTER SECTOR ${P2_START} IS ERASED.
- That is the Armbian system: it will be gone.
+ THE WHOLE DISK FROM SECTOR ${P1_START} ON IS ERASED.
+ That is the entire Armbian install, INCLUDING its /boot.
 
- The u-boot reserved area and p1 are never touched, so you can always
- recover by re-flashing Armbian over MASKROM.
+ *** READ THIS TWICE ***
+ Armbian's /boot is what currently lets this box start from a USB stick.
+ Once it is gone, THE BOX NO LONGER BOOTS FROM USB AT ALL. From then on
+ the eMMC is the only bootable system, and the only way back is
+ re-flashing over MASKROM. Do not run this unless you can do that.
 
- Games are NOT copied (roms / .update stay on the USB stick).
+ Only the bootloader reserved area in front of p1 is left alone (its DRAM
+ timings are calibrated for this board), which is what makes MASKROM
+ recovery possible at all.
 
- When it finishes: power off, UNPLUG THE USB STICK, power on.
- The stick must be unplugged -- both disks would carry the labels
- EMUELEC/STORAGE and the boot code just takes the first match, so
- leaving it in makes which one boots undefined.
+ Games are NOT copied: the ROM folders are created empty on p3 (EEROMS).
+ Your games stay on the USB stick and you copy them over afterwards
+ (Samba, or plug the stick in and copy). See the note printed at the end
+ about reusing the stick as an external ROM drive - it needs one change.
 ================================================================
 EOF
 
@@ -267,27 +307,54 @@ EOF
     echo ">>> Repartitioning ${EMMC}..."
     for n in $(parted -s "$EMMC" print 2>/dev/null | \
                awk '/^[[:space:]]*[0-9]+[[:space:]]/{print $1}' | sort -rn); do
-        [ "$n" -ge 2 ] && parted -s "$EMMC" rm "$n"
+        parted -s "$EMMC" rm "$n"
     done
-    parted -s "$EMMC" unit s mkpart primary fat32 "${P2_START}s" "${EE_END}s" || die "Could not create EMUELEC."
-    parted -s "$EMMC" name 2 EMUELEC
-    parted -s "$EMMC" set 2 msftdata on
-    parted -s "$EMMC" unit s mkpart primary ext4 "${ST_START}s" "${LAST_USABLE}s" || die "Could not create STORAGE."
-    parted -s "$EMMC" name 3 STORAGE
+    parted -s "$EMMC" unit s mkpart primary fat32 "${P1_START}s" "${EE_END}s" || die "Could not create EMUELEC."
+    parted -s "$EMMC" name 1 EMUELEC
+    parted -s "$EMMC" set 1 msftdata on
+    # Flag p1 bootable so u-boot's scan_dev_for_boot_part picks it explicitly
+    # instead of relying on its "nothing flagged -> just try partition 1"
+    # fallback. Non-fatal: if this parted build has no legacy_boot flag the
+    # fallback still gets us there.
+    parted -s "$EMMC" set 1 legacy_boot on 2>/dev/null || true
+    parted -s "$EMMC" unit s mkpart primary ext4 "${ST_START}s" "${ST_END}s" || die "Could not create STORAGE."
+    parted -s "$EMMC" name 2 STORAGE
+    parted -s "$EMMC" unit s mkpart primary ext4 "${RO_START}s" "${LAST_USABLE}s" || die "Could not create EEROMS."
+    parted -s "$EMMC" name 3 EEROMS
     partprobe "$EMMC"; sleep 3
-    { [ -b "${EMMC}p2" ] && [ -b "${EMMC}p3" ]; } || { sleep 3; partprobe "$EMMC"; sleep 2; }
-    { [ -b "${EMMC}p2" ] && [ -b "${EMMC}p3" ]; } || die "The new partitions did not appear."
+    { [ -b "${EMMC}p1" ] && [ -b "${EMMC}p2" ] && [ -b "${EMMC}p3" ]; } || { sleep 3; partprobe "$EMMC"; sleep 2; }
+    { [ -b "${EMMC}p1" ] && [ -b "${EMMC}p2" ] && [ -b "${EMMC}p3" ]; } || die "The new partitions did not appear."
 
     # ---- format ---------------------------------------------------------
-    # The labels must match what boot.cmd puts in bootargs:
-    #   boot=LABEL=EMUELEC disk=LABEL=STORAGE
+    # EEROMS is ext4, not the vfat the USB image uses. Two reasons:
+    #   1) no 4GiB file size limit (PS2/DC/PSP images run past it)
+    #   2) the planned internal+external ROM aggregation stacks an overlay on
+    #      top of the ROM tree, and an overlayfs upperdir needs xattr support.
+    #      External sticks are usually FAT and can therefore only ever be the
+    #      read-only lower layer, so the writable layer has to be this one.
+    # mount_romfs.sh reads /flash/ee_fstype to know the type (eemount probes it
+    # itself); it is written further down after the partition exists.
     echo ">>> Formatting..."
-    mkfs.vfat -F 32 -n EMUELEC "${EMMC}p2" >/dev/null || die "mkfs.vfat failed."
-    mkfs.ext4 -F -q -L STORAGE -m 0 "${EMMC}p3" >/dev/null || die "mkfs.ext4 failed."
+    mkfs.vfat -F 32 -n EMUELEC "${EMMC}p1" >/dev/null || die "mkfs.vfat failed."
+    mkfs.ext4 -F -q -L STORAGE -m 0 "${EMMC}p2" >/dev/null || die "mkfs.ext4 (STORAGE) failed."
+    mkfs.ext4 -F -q -L EEROMS  -m 0 "${EMMC}p3" >/dev/null || die "mkfs.ext4 (EEROMS) failed."
 
-    mkdir -p /tmp/ee_flash /tmp/ee_storage /tmp/ee_boot
-    mount "${EMMC}p2" /tmp/ee_flash   || die "Could not mount the new EMUELEC partition."
-    mount "${EMMC}p3" /tmp/ee_storage || die "Could not mount the new STORAGE partition."
+    mkdir -p /tmp/ee_flash /tmp/ee_storage /tmp/ee_roms
+    mount "${EMMC}p1" /tmp/ee_flash   || die "Could not mount the new EMUELEC partition."
+    mount "${EMMC}p2" /tmp/ee_storage || die "Could not mount the new STORAGE partition."
+    mount "${EMMC}p3" /tmp/ee_roms    || die "Could not mount the new EEROMS partition."
+
+    # ---- will the system even fit? --------------------------------------
+    # Check BEFORE copying: running out of room halfway through leaves a
+    # half-written SYSTEM on a disk that is now the only bootable one.
+    FLASH_USED_KB=$(du -sk /flash 2>/dev/null | awk '{print $1}')
+    EE_FREE_KB=$(df -k /tmp/ee_flash 2>/dev/null | awk 'NR==2{print $4}')
+    if [ -n "$FLASH_USED_KB" ] && [ -n "$EE_FREE_KB" ]; then
+        if [ "$FLASH_USED_KB" -gt "$EE_FREE_KB" ]; then
+            umount /tmp/ee_flash /tmp/ee_storage /tmp/ee_roms 2>/dev/null || true
+            die "/flash needs $(( FLASH_USED_KB / 1024 ))MB but the new EMUELEC partition only has $(( EE_FREE_KB / 1024 ))MB free. Raise EE_SIZE_GIB for this board."
+        fi
+    fi
 
     # ---- copy the OS ----------------------------------------------------
     echo ">>> Copying the system to EMUELEC..."
@@ -297,12 +364,47 @@ EOF
     for it in /flash/*.dtb; do
         [ -e "$it" ] && cp -a "$it" /tmp/ee_flash/
     done
+    echo "ext4" > /tmp/ee_flash/ee_fstype
+    sync
+
+    # ---- point extlinux.conf at the new partitions -----------------------
+    # This is the whole boot chain: this u-boot has scan_dev_for_extlinux and
+    # scans p1, so the extlinux.conf we just copied is what boots the box.
+    # It still carries the UUIDs of the USB stick it was generated for, which
+    # would send init looking for a disk that is no longer there.
+    #
+    # UUIDs, not labels, on purpose: after the install the stick may well be
+    # plugged back in as an external ROM drive, and then BOTH disks carry the
+    # labels EMUELEC and STORAGE. A label would be a coin toss; a UUID is not.
+    # ★-c /dev/null is not cosmetic★: blkid keeps a cache (/run/blkid/blkid.tab)
+    # and we have just re-made the filesystems on these very device nodes. A
+    # cached hit would hand back the UUID of the partition that existed a minute
+    # ago, and we would happily write it into the only boot config on the disk.
+    EE_UUID=$(blkid -c /dev/null -s UUID -o value "${EMMC}p1") || true
+    ST_UUID=$(blkid -c /dev/null -s UUID -o value "${EMMC}p2") || true
+    [ -n "$EE_UUID" ] && [ -n "$ST_UUID" ] || die "Could not read the UUIDs of the new partitions."
+    if [ -f /tmp/ee_flash/extlinux/extlinux.conf ]; then
+        echo ">>> Pointing extlinux.conf at the eMMC (boot=${EE_UUID} disk=${ST_UUID})..."
+        sed -i -e "s#boot=[^ ]*#boot=UUID=${EE_UUID}#" \
+               -e "s#disk=[^ ]*#disk=UUID=${ST_UUID}#" \
+               /tmp/ee_flash/extlinux/extlinux.conf || die "Could not rewrite extlinux.conf."
+        grep -q "boot=UUID=${EE_UUID}" /tmp/ee_flash/extlinux/extlinux.conf || \
+            die "extlinux.conf does not carry the new boot UUID - refusing to leave an unbootable install."
+    else
+        die "/flash/extlinux/extlinux.conf is missing - this image cannot boot from extlinux."
+    fi
+    # Any per-dtb variant next to it needs the same treatment.
+    for it in /tmp/ee_flash/extlinux/*.conf; do
+        [ "$it" = "/tmp/ee_flash/extlinux/extlinux.conf" ] && continue
+        [ -e "$it" ] || continue
+        sed -i -e "s#boot=[^ ]*#boot=UUID=${EE_UUID}#" \
+               -e "s#disk=[^ ]*#disk=UUID=${ST_UUID}#" "$it"
+    done
     sync
 
     # ---- copy settings, excluding games and rebuildable caches ----------
-    # IMPORTANT: /storage/roms and /storage/.update are separate mount points
-    # (a third USB partition). Copying them would duplicate tens of GB and
-    # would not fit. Games stay on the stick by design.
+    # /storage/roms and /storage/.update are separate mount points (the ROM
+    # partition). They are handled separately below, not copied wholesale.
     echo ">>> Copying settings to STORAGE (games and caches excluded)..."
     cd /storage || die "Cannot enter /storage."
     for e in * .[!.]*; do
@@ -314,26 +416,34 @@ EOF
         cp -a "/storage/$e" /tmp/ee_storage/ 2>/dev/null || echo "  warning: could not copy $e"
     done
     rm -rf /tmp/ee_storage/.cache/cores 2>/dev/null
+    # /storage/roms is only a mount point for EEROMS; it must exist and be empty.
     mkdir -p /tmp/ee_storage/roms
     sync
 
-    # ---- refresh the chainload kernel/dtb on p1 -------------------------
-    # u-boot reads ONLY these; the copies under /flash are not what boots.
-    # Keeping them in step with the SYSTEM we just installed is essential --
-    # a stale KERNEL here means the box runs an old kernel while
-    # /etc/os-release advertises the new version.
-    echo ">>> Refreshing the chainload kernel/dtb on p1..."
-    mount "${EMMC}p1" /tmp/ee_boot || die "Could not mount p1."
-    mkdir -p /tmp/ee_boot/emuelec
-    cp -f /flash/KERNEL /tmp/ee_boot/emuelec/KERNEL
-    for DTB in /flash/*.dtb; do
-        [ -e "$DTB" ] && cp -f "$DTB" "/tmp/ee_boot/emuelec/$(basename "$DTB")"
-    done
-    # TRIGGER tells boot.cmd to chainload EmuELEC instead of Armbian.
-    [ -e /tmp/ee_boot/emuelec/TRIGGER ] || : > /tmp/ee_boot/emuelec/TRIGGER
+    # ---- seed the ROM partition -----------------------------------------
+    # Copy the FOLDER TREE only, no games: the system folders are what ES needs
+    # to stop logging "System <x> path does not exist" and to show its platform
+    # list. Copying the games themselves could be tens of GB and is the user's
+    # call, not ours.
+    echo ">>> Creating the ROM folders on EEROMS (games are not copied)..."
+    # Plain loop, not find -exec: busybox's find does not reliably substitute
+    # {} when it is embedded in a longer argument.
+    if [ -d /storage/roms ]; then
+        for e in /storage/roms/*/; do
+            [ -d "$e" ] || continue
+            mkdir -p "/tmp/ee_roms/$(basename "$e")"
+        done
+    fi
+    mkdir -p /tmp/ee_roms/.update
     sync
 
-    umount /tmp/ee_flash /tmp/ee_storage /tmp/ee_boot 2>/dev/null
+    # ★|| true★: the script runs under `set -e`, and a umount that fails (busy
+    # for a moment) would abort here -- AFTER a fully successful install, with
+    # a non-zero exit code. The caller (the es4all wrapper) would then print
+    # "FAILED" over a box that is actually installed correctly, which is the
+    # worst possible thing to tell someone about a disk-erasing operation.
+    sync
+    umount /tmp/ee_flash /tmp/ee_storage /tmp/ee_roms 2>/dev/null || true
 
     echo
     parted -s "$EMMC" print
@@ -343,8 +453,25 @@ EOF
  Done.
  Power off, UNPLUG THE USB STICK, then power on -> EmuELEC boots
  from the internal eMMC.
- If it does not boot: plug the USB stick back in, or re-flash
- Armbian over MASKROM (the bootloader and p1 were never touched).
+
+ The ROM folders on the internal disk are empty. Copy your games over,
+ e.g. over Samba, or by plugging the stick in and copying from
+ /var/media.
+
+ NOTE about reusing the old stick AS AN EXTERNAL ROM DRIVE:
+ its ROM partition is still labelled EEROMS, and both ROM mounters skip
+ anything called EEROMS when they look for external drives (that name is
+ reserved for the internal one). To use it as an external library:
+   - give that partition a different label, e.g.  fatlabel /dev/sda3 GAMES
+   - put the game folders under a top-level  roms/  folder on it
+     (on the stick they currently sit at the root, which is the layout
+     used for the INTERNAL drive - the external scan looks for */roms/)
+   - and drop an empty file named  emuelecroms  inside that roms/ folder
+ Otherwise just copy the games off it and reformat it.
+
+ If it does not boot, the USB stick will NOT save you any more: the
+ Armbian /boot that used to chainload it is gone. Recovery is a MASKROM
+ re-flash. The bootloader area itself was never touched.
 ================================================================
 EOF
     exit 0
