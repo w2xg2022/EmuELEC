@@ -34,13 +34,25 @@ case "$LINUX" in
     #   产出 mali_kbase.ko 零错误(源码里有 6.11/6.12/6.17/7.0 的版本分支)。
     #   但 6.18 mainline 树内【没有】kbase(Armbian 用 Panfrost),所以要另外加模组包 —— 见 TODO。
     #
-    # 来源:本地 git archive 自 w2xg2022/armbian-kernel 分支 6.18(HEAD d77140b4)。
-    # ★tarball 已放进 sources/linux/ 并附 .url/.sha256 旁档,所以不会去网路下载★
-    # (get_archive 的 _get_file_already_downloaded:档案 + .url + .sha256 都在
-    #  且 .sha256 内容 == PKG_SHA256 就直接命中快取)。
-    # 要换 commit:重新 git archive --prefix=linux-<sha>/ 并更新这里的 PKG_VERSION/PKG_SHA256。
+    # 来源:w2xg2022/armbian-kernel 分支 6.18(HEAD d77140b4)的 GitHub archive。
+    #
+    # ★换 commit 的正确做法(2026-08-02 更正)★
+    #   直接改 PKG_VERSION,然后【下载 GitHub 产生的 archive】取它的 sha256:
+    #     curl -sL https://github.com/w2xg2022/armbian-kernel/archive/<sha>.tar.gz | sha256sum
+    #   ☠️ 不要用本地 git archive --prefix=... 重打包再算 sha256 ☠️
+    #   本地重打包的顶层目录名(linux-<sha>/)与 GitHub 的(armbian-kernel-<sha>/)不同,
+    #   内容一模一样但 sha256 不同 —— VM 上因为 sources/ 命中快取而毫无症状,
+    #   一上云端就是 checksum 不符;更坑的是失败讯息显示的是【后续镜像的 404】,
+    #   看起来像「commit 不见了」,实际 commit 好端端在、archive 也回 200。
+    #   (2026-08-02 云编译第二轮就栽在这,查了半天才看到 checksum 那行 WARNING。)
     PKG_VERSION="d77140b4732ad52793dba8b97a5b0c79a1e20f86"
-    PKG_SHA256="2c478abdb09a7ccfe492f7f8dd26fff08b385248c90179bcecab7007a7a8307f"
+    # NOTE(w2xg2022): 2026-08-02 修正 —— 旧值是拿【本地重打包过的 tarball】算的,
+    # 云端永远算不出来。实证:GitHub 产生的 archive 顶层目录是 armbian-kernel-<sha>/,
+    # VM sources/ 里那颗是 linux-<sha>/(被改名重打包),内容 98000 项逐项相同、
+    # 只有目录名不同,所以 sha256 不同。云端下载 245MB 两次都成功却 checksum 不符,
+    # 接着去试 LibreELEC 镜像(没有)才吐 404 —— ★错误讯息说的 404 是误导,
+    # 真因是 checksum★。现值取自 github archive,连抓两次一致。
+    PKG_SHA256="7c8ac8b27621402e07ccc0c59c033ca4614dedfa20d01e337ca0ca695aaf1893"
     PKG_URL="https://github.com/w2xg2022/armbian-kernel/archive/$PKG_VERSION.tar.gz"
     PKG_SOURCE_NAME="linux-$LINUX-$PKG_VERSION.tar.gz"
     # 这棵树没有我们自维护的 6.6 patch(maxio PHY 等上游已有/已合并),不套 patch 目录
