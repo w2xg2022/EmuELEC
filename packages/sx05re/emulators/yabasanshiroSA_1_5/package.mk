@@ -2,7 +2,13 @@ PKG_NAME="yabasanshiroSA_1_5"
 PKG_VERSION="f6f41dd6485c638ab661f3acd2951c9522f34450"
 PKG_ARCH="any"
 PKG_LICENSE="GPLv2"
-PKG_SITE="https://github.com/devmiyax/yabause"
+# NOTE(w2xg2022): 2026-08-03 上游 devmiyax/yabause 【整个仓库已被删除】
+# (GitHub 回 404 / repository not found,同名者底下也没有改名后的版本)。
+# 改指 sydarn 的 fork —— 与隔壁 yabasanshiroSA_1_11 同一个来源,保持一致。
+# ★该 fork 里有我们 pin 的同一个 commit f6f41dd6485c(2022-01-09)★,
+# git 是内容定址,SHA 相同即程式码逐字节相同,不存在换来源的雜湊风险;
+# 已实地 git fetch --depth 1 该 SHA 验证取得得到。
+PKG_SITE="https://github.com/sydarn/yabause"
 PKG_URL="${PKG_SITE}.git"
 # NOTE(w2xg2022): 补上 libpng —— src/retro_arena/main.cpp:65 直接 #include <libpng16/png.h>。
 # 全量建置时 libpng 碰巧被别的套件先编好,所以这个漏宣告一直没暴露;单独编本包(例如
