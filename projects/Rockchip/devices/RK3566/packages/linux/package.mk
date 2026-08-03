@@ -123,10 +123,26 @@ if [ -n "${KERNEL_TOOLCHAIN}" ]; then
   HEADERS_ARCH=${TARGET_ARCH}
 fi
 
-# NOTE(w2xg2022): 6.6 的 tools/perf 需要外部 libtraceevent(旧内核是内建的),
+# ★2026-08-03:本机型【不编 perf】★
+#
+# perf 是开发用的效能分析工具,游戏韧体从头到尾没有用到它,却要多编一大包东西。
+# 而且 6.18 的 tools/perf 在我们的工具链里编不过 —— 云编译第十二轮(562/577)
+# 就栽在这:
+#   libbpf.c:46:10: fatal error: libelf.h: No such file or directory
+# perf 的 libbpf 会去建一个【给 host 跑的】bootstrap bpftool,那一段需要 host
+# 的 libelf 标头,而工具链里没有(elfutils 是编给 target 的,帮不上忙)。
+#
+# 它是【自动被开启】的:config 里只要有 CONFIG_PERF_EVENTS= 就会编,
+# 而 Armbian 基底的 config 有开。与其去补 host 的 libelf,不如直接关掉 ——
+# 少一个用不到的元件,少一整类相依问题。
+#
+# (下面那段旧注释保留备查:6.6 时代 perf 还缺 libtraceevent,当时是靠
+#  NO_LIBTRACEEVENT=1 绕过。现在整个不编,那条也就用不上了。)
+#
+# 旧注释:6.6 的 tools/perf 需要外部 libtraceevent(旧内核是内建的),
 # 缺了会直接 "ERROR: libtraceevent is missing … or build with NO_LIBTRACEEVENT=1"。
-# 我们不打包 libtraceevent,所以下面 make perf 时带上 NO_LIBTRACEEVENT=1
-# (这是错误信息本身给出的官方开关,代价是 perf 少掉 tracepoint 解析功能)。
+PKG_BUILD_PERF="no"
+
 if [ "${PKG_BUILD_PERF}" != "no" ] && grep -q ^CONFIG_PERF_EVENTS= ${PKG_KERNEL_CFG_FILE}; then
   PKG_BUILD_PERF="yes"
   PKG_DEPENDS_TARGET+=" binutils elfutils libunwind zlib openssl"
