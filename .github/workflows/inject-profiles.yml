@@ -1,0 +1,117 @@
+#==========================================================================
+# Lane P (profiles): bake es4all-profiles into an already-built EmuELEC image
+# as a first-boot baseline. Nothing is recompiled: download the release image,
+# unsquash SYSTEM, drop the payload into /usr/config, re-squash (~5 min).
+#
+# Design doc (single source of truth, do NOT restate it here):
+#   https://github.com/w2xg2022/es4all-profiles/blob/main/docs/firmware-injection.md
+#
+# Deliberately a separate workflow, not a step of build-emuelec.yml: re-running
+# the injection is the thing you do most often (every profile change), and
+# folding it into the build would make that mean "rebuild everything".
+#==========================================================================
+
+name: Inject es4all-profiles into image
+
+on:
+  workflow_dispatch:
+    inputs:
+      RELEASE_TAG:
+        description: "release tag holding the built image (e.g. MD1000-30780359125)"
+        required: true
+        type: string
+      PROFILES_REF:
+        description: "es4all-profiles ref to bake in (branch, tag or SHA)"
+        default: "main"
+        type: string
+
+jobs:
+  inject-profiles:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install host tools
+        run: sudo apt-get update && sudo apt-get install -y squashfs-tools
+
+      - name: Fetch es4all-profiles
+        id: profiles
+        run: |
+          set -euo pipefail
+          git clone https://github.com/${{ github.repository_owner }}/es4all-profiles.git profiles
+          cd profiles
+          git checkout -q "${{ inputs.PROFILES_REF }}"
+          SHA=$(git rev-parse HEAD)
+          VER=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' manifest.json | head -1)
+          echo "sha=$SHA"     >> "$GITHUB_OUTPUT"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+      # The single most valuable check here. A payload whose manifest does not
+      # match its files is worse than no payload: the device verifies md5 per
+      # file and aborts the WHOLE batch, so one stale entry silently disables
+      # every profile. This has actually happened (profiles pushed, devices
+      # "saw no update" -- the manifest had not been regenerated).
+      - name: Verify manifest matches the files
+        run: |
+          set -euo pipefail
+          cd profiles
+          sh tools/gen_manifest.sh >/dev/null
+          if ! git diff --quiet -- manifest.json; then
+            echo "::error::manifest.json is stale -- regenerate it in es4all-profiles and push"
+            git --no-pager diff -- manifest.json | head -40
+            exit 1
+          fi
+
+      - name: Download the built image
+        run: |
+          set -euo pipefail
+          gh release download "${{ inputs.RELEASE_TAG }}" -R "${{ github.repository }}" -p '*.img.gz' -D img
+          ls -la img/
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Inject payload into SYSTEM
+        run: |
+          set -euo pipefail
+          SRC=$(ls img/*.img.gz | head -1)
+          gzip -dc "$SRC" > base.img
+          LOOP=$(sudo losetup --find --show --partscan base.img)
+          sudo mkdir -p /mnt/flash
+          # EmuELEC keeps SYSTEM on the first (FAT) partition, same as ROCKNIX.
+          sudo mount "${LOOP}p1" /mnt/flash
+          sudo unsquashfs -d SYSTEM.d /mnt/flash/SYSTEM
+
+          DEST=SYSTEM.d/usr/config/es4all-profiles
+          sudo rm -rf "$DEST"; sudo mkdir -p "$DEST"
+          # tar, not cp -r: keeps the executable bit on bin/*, without which the
+          # scripts simply do not run (and nothing says why).
+          (cd profiles && tar --exclude-vcs -cf - .) | sudo tar -C "$DEST" -xf -
+          echo "${{ steps.profiles.outputs.version }}" | sudo tee SYSTEM.d/usr/config/es4all-profiles.version >/dev/null
+          echo "${{ steps.profiles.outputs.sha }}"     | sudo tee SYSTEM.d/usr/config/es4all-profiles.sha >/dev/null
+
+          # Prove it landed -- a cp to the wrong path looks exactly like success.
+          {
+            echo "### injected profiles"
+            echo "- ref: \`${{ inputs.PROFILES_REF }}\` -> \`${{ steps.profiles.outputs.sha }}\`"
+            echo "- manifest version: \`${{ steps.profiles.outputs.version }}\`"
+            echo "- files: \`$(sudo find "$DEST" -type f | wc -l)\`"
+            echo "- executables under bin/: \`$(sudo find "$DEST" -path '*/bin/*' -perm -u+x -type f | wc -l)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          sudo mksquashfs SYSTEM.d SYSTEM.new -noappend -comp zstd -Xcompression-level 19 -b 1M
+          sudo cp SYSTEM.new /mnt/flash/SYSTEM
+          sync
+          sudo umount /mnt/flash
+          sudo losetup -d "$LOOP"
+          OUT="$(basename "$SRC" .img.gz)-profiles.img.gz"
+          gzip -c base.img > "$OUT"
+          echo "OUT=$OUT" >> "$GITHUB_ENV"
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-with-profiles
+          path: ${{ env.OUT }}
+          retention-days: 7
