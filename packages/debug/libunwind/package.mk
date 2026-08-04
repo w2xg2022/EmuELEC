@@ -34,6 +34,26 @@ PKG_CONFIGURE_OPTS_TARGET="--enable-static \
                            --disable-documentation \
                            --disable-tests"
 
+# NOTE(w2xg2022 2026-08-04): ★删掉 tarball 自带的 aclocal.m4, 否则 LT_INIT 永远是旧的★
+#
+#   补了 libtool:host 之后 libtoolize 确实跑了、config/ltmain.sh 换成 2.4.7,
+#   但编译还是死在同一句版本错配 —— 因为 aclocal.m4 里的 LT_INIT 仍是 2.4.6 的。
+#   libtoolize 自己在日志里就讲了:
+#       libtoolize: You should add the contents of the following files to 'aclocal.m4':
+#       libtoolize:   .../toolchain/share/aclocal/libtool.m4
+#       libtoolize:   .../toolchain/share/aclocal/ltversion.m4
+#       libtoolize: Consider adding 'AC_CONFIG_MACRO_DIRS([m4])' to configure.ac
+#   libunwind-1.6.2 的 configure.ac 没有 AC_CONFIG_MACRO_DIRS, 所以 aclocal 不会去
+#   动那份【随 tarball 附带、用 2.4.6 产生的】aclocal.m4 —— 於是 ltmain.sh(2.4.7) 与
+#   LT_INIT(2.4.6) 各说各话, 一编就炸。
+#
+#   把它删掉, autoreconf 就会用工具链搜寻路径里的 2.4.7 巨集重新产生一份, 两边对齐。
+#   ★用 post_unpack 而不是 pre_build★: scripts/build 是【先】autoreconf(第222行)
+#   才呼叫 pre_build_target(第228行), 在 pre_build 里删已经来不及。
+post_unpack() {
+  rm -f ${PKG_BUILD}/aclocal.m4
+}
+
 makeinstall_target() {
   make DESTDIR=${SYSROOT_PREFIX} install
 }
