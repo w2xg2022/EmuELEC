@@ -12,6 +12,11 @@ on:
         type: boolean
         required: false
         default: false
+      purge_stale_aclocal:
+        description: '删掉 sysroot 里的 libtool.m4 / ltversion.m4(孤儿巨集)。旧 checkpoint 会带回一份【树里没有任何套件会更新】的旧版巨集(libtool:target 的 post_makeinstall_target 会 rm -rf usr/share, 所以它根本不装这个档), 而 do_autoreconf 把 aclocal 的 -I 指向 sysroot、优先序高於工具链预设路径 -> LT_INIT 用旧版、ltmain.sh 用新版 -> libtool: Version mismatch。删掉它就退回工具链那份。⚠️治标: 孤儿的来源未查明, 同一份 checkpoint 可能还有别的'
+        required: false
+        type: boolean
+        default: false
       clean_pkgs:
         description: '强制重编这些套件(空格分隔)。用於接力还原回来的 build 目录是【旧工具链世代半编出来的】那种情形——它有 build 目录、没有 stamp, 既有的补救清单(有 stamp 缺 build 目录)刚好相反, 救不到。徵状是 configure 期的版本错配, 例: libtool 2.4.7 vs 2.4.6 让 libunwind 编不过。例: libunwind'
         required: false
@@ -350,6 +355,27 @@ jobs:
               #   ★看起来像逾时, 其实是真失败★。
               #   这种情况没有可靠的自动判据(版本错配的形态各异), 所以做成显式输入:
               #   看到 configure 期的版本错配就把那个套件填进来跑一次。
+              # ★删掉 sysroot 里的孤儿 aclocal 巨集★(2026-08-04)
+              #   do_autoreconf 会把 aclocal 的搜寻路径用 -I 指向
+              #   toolchain/<target>/sysroot/usr/share/aclocal, 而 -I 的优先序【高於】
+              #   工具链自己的预设目录。旧 checkpoint 里那份 libtool.m4 是 2.4.6,
+              #   於是 LT_INIT 取自 2.4.6、ltmain.sh 却是 libtoolize(2.4.7)放的 ->
+              #       libtool: Version mismatch error. This is libtool 2.4.7, but the
+              #       definition of this LT_INIT comes from libtool 2.4.6.
+              #   ⚠️ 重编 libtool 【救不了】: packages/devel/libtool 的
+              #      post_makeinstall_target 会 rm -rf ${INSTALL}/usr/share ——
+              #      它根本不把巨集装进 sysroot。那份是没有主人的孤儿, 树里没有任何
+              #      套件会去更新它, 只有整包丢掉 checkpoint 才会消失。
+              #   ⚠️ 这是治标: 孤儿【怎么进去的】还没查明, 同一份 checkpoint 里可能
+              #      还有别的。真正乾净的作法是丢掉 checkpoint 从零建。
+              if [ "${{ inputs.purge_stale_aclocal }}" = "true" ]; then
+                for m in $(find build.*/toolchain/*/sysroot/usr/share/aclocal \
+                                -maxdepth 1 -name 'libtool.m4' -o -name 'ltversion.m4' 2>/dev/null); do
+                  echo "删掉孤儿巨集 ${m}"
+                  grep -m1 -oE 'serial [0-9]+|VERSION=.[0-9.]+' "${m}" 2>/dev/null || :
+                  rm -f "${m}"
+                done
+              fi
               if [ -n "${{ inputs.clean_pkgs }}" ] && [ -n "${BD}" ]; then
                 for p in ${{ inputs.clean_pkgs }}; do
                   echo "强制重编 ${p}: 清 build / .stamps / install_pkg"
