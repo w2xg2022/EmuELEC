@@ -25,6 +25,26 @@ mkdir -p $RELEASE_DIR/3rdparty/bootloader
       cp -a $dtb $RELEASE_DIR/3rdparty/bootloader
     fi
   done
+
+  # NOTE(w2xg2022 2026-08-04): ★再从 INSTALL 抓一次 —— 上面那段在云编译常常是空的★
+  #
+  #   上面只看【内核建置树】(get_build_dir linux)。云编译的接力 checkpoint 为了省空间
+  #   会把 build/ 目录剥掉, 於是还原回来的那一轮 $LINUX_DTS_DIR 根本不存在,
+  #   一颗 dtb 都抓不到 —— 而这个 for 回圈对「目录不存在」是静默跳过的。
+  #
+  #   後果: 开机分区没有 dtb, 但 scripts/mkimage 仍写 FDT /rk3566-md1000.dtb。
+  #   MD1000 是从 eMMC 链载, 所以机器【照样开得起来】, 坏掉的是 md1000-kernel-sync.sh
+  #   ——它要从开机分区根目录取 dtb 同步到 eMMC, 找不到就跳过:
+  #   ★KERNEL 更新了、dtb 永远停在旧版, 全程静默★(实机拆 run 30917265669 坐实)。
+  #
+  #   $INSTALL/usr/share/bootloader/ 是内核套件【安装阶段】放 dtb 的地方,
+  #   它跟着 install_pkg 走、不会被 checkpoint 剥掉, 所以拿它当第二来源。
+  #   两边都抓是刻意的: 本地全新建置时以内核树为准(最新), 云编译接力时靠 INSTALL 补上。
+  for dtb in $INSTALL/usr/share/bootloader/*.dtb; do
+    if [ -f $dtb ]; then
+      cp -a $dtb $RELEASE_DIR/3rdparty/bootloader
+    fi
+  done
   
 LE_TMP=$(mktemp -d)
 mkdir -p "${LE_TMP}/extlinux" 
