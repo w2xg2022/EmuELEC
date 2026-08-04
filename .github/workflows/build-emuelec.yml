@@ -12,6 +12,10 @@ on:
         type: boolean
         required: false
         default: false
+      clean_pkgs:
+        description: '强制重编这些套件(空格分隔)。用於接力还原回来的 build 目录是【旧工具链世代半编出来的】那种情形——它有 build 目录、没有 stamp, 既有的补救清单(有 stamp 缺 build 目录)刚好相反, 救不到。徵状是 configure 期的版本错配, 例: libtool 2.4.7 vs 2.4.6 让 libunwind 编不过。例: libunwind'
+        required: false
+        default: ''
       seed_from:
         description: '本型号首次建置时,从哪个兄弟型号 seed base(工具链+userland),仅重编设备/内核专属包。留空=不 seed,从零建。★只对同 DEVICE 的兄弟型号有效★(例:X98mini 与 E900V22C 同为 Amlogic-no 可互 seed;RK3566 家族目前只有 MD1000,没有兄弟可借,首次必须从零建)。例:X98mini'
         required: false
@@ -335,6 +339,23 @@ jobs:
                   rm -f "${BD}.stamps/${p}/build_init"
                 fi
               done
+              # ★逃生口: 强制重编指定套件★(2026-08-04 加)
+              #   接力的价值就是「续编半成品」, 所以【不能】笼统地把「有 build 目录、
+              #   没 stamp」的都清掉 —— 那正是要续编的东西。
+              #   但半成品若来自【更早的工具链世代】就完全相反: 它的 configure 产物
+              #   与现在的 host 工具对不上, 续编只会一直撞同一面墙。
+              #   实机 2026-08-04: E900V22C/X98mini 的 checkpoint 是 07-17 的,
+              #   libunwind 的 aclocal.m4 出自 libtool 2.4.6、树里的 libtool 已是 2.4.7,
+              #   於是每一轮接力都在同一个地方失败, 而且讯息是「本轮未完整跑完」——
+              #   ★看起来像逾时, 其实是真失败★。
+              #   这种情况没有可靠的自动判据(版本错配的形态各异), 所以做成显式输入:
+              #   看到 configure 期的版本错配就把那个套件填进来跑一次。
+              if [ -n "${{ inputs.clean_pkgs }}" ] && [ -n "${BD}" ]; then
+                for p in ${{ inputs.clean_pkgs }}; do
+                  echo "强制重编 ${p}: 清 build / .stamps / install_pkg"
+                  rm -rf "${BD}build/${p}-"* "${BD}.stamps/${p}" "${BD}install_pkg/${p}-"* 2>/dev/null || :
+                done
+              fi
             else
               echo "接力状态拼回后损坏，丢弃，从零开始建置"
               rm -f "${STATE_FILE}"
