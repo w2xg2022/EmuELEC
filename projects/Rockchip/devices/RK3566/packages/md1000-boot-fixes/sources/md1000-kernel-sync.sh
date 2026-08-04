@@ -36,13 +36,33 @@ if [ -d "$M/emuelec" ]; then
   fi
 
   # dtb 一并同步(同样只有 eMMC 那份会被 u-boot 读到)
-  for D in /flash/*.dtb; do
-    [ -f "$D" ] || continue
-    B=$(basename "$D")
-    if [ "$(md5sum "$D" | cut -d' ' -f1)" != "$(md5sum "$M/emuelec/$B" 2>/dev/null | cut -d' ' -f1)" ]; then
-      cp "$D" "$M/emuelec/$B" && log "$B synced"
+  #
+  # ★目标档名固定是 "dtb",不是原本带机型的档名★
+  # 链载块载入的是 emuelec/dtb(刻意取中性档名,好让 u-boot 侧不带任何机型资讯)。
+  # 早期这里是按来源档名 cp 成 emuelec/rk3566-md1000.dtb —— 那颗档【没有人会去读】,
+  # 于是 KERNEL 同步了、dtb 却永远停在旧版,还在旁边留下一颗垃圾档。
+  # 这正是本脚本要防的那种静默失效,自己却踩了一次。
+  #
+  # EmuELEC 的 dtb 在 boot 分区【根目录】(bootloader/mkimage 是 mcopy -o "$dtb" ::),
+  # 不在 device_trees/ 子目录(那是 ROCKNIX 的作法,别搬过来)。
+  #
+  # 只有一颗是常态,直接采用;有好几颗代表这份映像带了不只一块板子 ——
+  # 猜错 dtb 正是那种会让机器开不了机的静默错误,所以宁可不动并记一笔。
+  DTBCOUNT=$(ls /flash/*.dtb 2>/dev/null | wc -l)
+  if [ "$DTBCOUNT" = "1" ]; then
+    D=$(ls /flash/*.dtb)
+    if [ "$(md5sum "$D" | cut -d' ' -f1)" != "$(md5sum "$M/emuelec/dtb" 2>/dev/null | cut -d' ' -f1)" ]; then
+      cp "$D" "$M/emuelec/dtb" && log "dtb synced from $(basename "$D") (takes effect next boot)"
     fi
-  done
+    # 清掉早期版本留下的、按机型命名的旧副本(u-boot 根本不读它,留着只会误导)
+    for OLD in "$M"/emuelec/*.dtb; do
+      [ -f "$OLD" ] && rm -f "$OLD" && log "removed stale $(basename "$OLD") (u-boot only reads emuelec/dtb)"
+    done
+  elif [ "$DTBCOUNT" = "0" ]; then
+    log "WARN /flash 里没有 *.dtb,dtb 未同步"
+  else
+    log "WARN /flash 里有 $DTBCOUNT 个 dtb,无法判断该用哪一个,dtb 未同步"
+  fi
 
   sync
 fi
