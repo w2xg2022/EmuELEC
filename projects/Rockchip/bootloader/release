@@ -5,6 +5,23 @@ SRCDIR="${BUILD}"/image/system/usr/share/bootloader
 DSTDIR="${RELEASE_DIR}"/3rdparty/bootloader
 
 mkdir -p "${DSTDIR}"
+
+# NOTE(w2xg2022 2026-08-04): ★dtb 的复制必须在 u-boot 那段【之前】★
+#
+#   原本这行在档案最后。问题是上面那段在「找不到 u-boot 映像」时会 `exit 1` ——
+#   而 RK3566(MD1000)这类★链载启动★的机型【正常构建就不产生 u-boot】,
+#   於是每次都从那里早退, dtb 那行永远跑不到。
+#
+#   後果不是编译失败(呼叫端不看这支的结束码), 而是:
+#     - 开机分区里没有 rk3566-md1000.dtb
+#     - 但 scripts/mkimage 仍无条件写 `FDT /rk3566-md1000.dtb` 进 extlinux.conf
+#     - MD1000 是从 eMMC 链载, 所以机器【照样开得起来】—— 看不出有问题
+#     - 真正坏掉的是 md1000-kernel-sync.sh: 它要从开机分区根目录取 dtb 同步到 eMMC,
+#       找不到就跳过 → ★KERNEL 更新了、dtb 永远停在旧版, 全程静默★
+#   实机 2026-08-04 拆 MD1000 映像(run 30917265669)坐实: 开机分区只有
+#   extlinux/ KERNEL KERNEL.md5 oemsplash SYSTEM SYSTEM.md5, 一颗 dtb 都没有。
+cp -av "${SRCDIR}"/"${DEVICE,,}"*.dtb "${DSTDIR}"
+
 if [ -n "${UBOOT_SYSTEM}" ]; then
   if [ -f "${SRCDIR}"/"${UBOOT_FIT_IMAGE}" ]; then
     cp -av "${SRCDIR}"/"${UBOOT_FIT_IMAGE}" "${DSTDIR}" && \
@@ -20,4 +37,3 @@ if [ -n "${UBOOT_SYSTEM}" ]; then
   fi
 fi
 
-cp -av "${SRCDIR}"/"${DEVICE,,}"*.dtb "${DSTDIR}"

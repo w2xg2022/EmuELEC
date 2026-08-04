@@ -250,9 +250,20 @@ elif [ "${BOOTLOADER}" = "u-boot" -a \( -n "${UBOOT_SYSTEM}" -o -n "${SUBDEVICE}
   [ -n "${UBOOT_SYSTEM}" ] && DTB="$(${SCRIPTS}/uboot_helper ${PROJECT} ${DEVICE} ${UBOOT_SYSTEM} dtb)" || :
   if [ -n "${DTB}" ]; then
 
-    if [ -f "${RELEASE_DIR}/3rdparty/bootloader/${DTB}" ]; then
-      mcopy "${RELEASE_DIR}/3rdparty/bootloader/${DTB}" :: >"${SAVE_ERROR}" 2>&1 || show_error
+    # NOTE(w2xg2022 2026-08-04): ★dtb 缺席要【当场炸】, 不能默默跳过★
+    #   下面的 extlinux.conf 是【无条件】写 `FDT /${DTB}` 的。所以 dtb 没被复制进来时,
+    #   产出的是一份指向不存在档案的开机设定 —— 不报错、不警告, 而且在链载机型上
+    #   (u-boot 从 eMMC 读 kernel/dtb)机器还照样开得起来, 更不容易发现。
+    #   实机踩过(MD1000, run 30917265669): 开机分区一颗 dtb 都没有,
+    #   连带让 md1000-kernel-sync.sh 永远同步不到 dtb。
+    #   走到这里代表 DTB 非空(是 uboot_helper 查出来的), 那它就【应该】存在;
+    #   不存在就是上游某一步没做完, 让建置停在这里远好过发出一张坏图。
+    if [ ! -f "${RELEASE_DIR}/3rdparty/bootloader/${DTB}" ]; then
+      echo "image: ERROR ${DTB} not found in ${RELEASE_DIR}/3rdparty/bootloader" \
+           "-- extlinux.conf would point at a file that is not there" >"${SAVE_ERROR}"
+      show_error
     fi
+    mcopy "${RELEASE_DIR}/3rdparty/bootloader/${DTB}" :: >"${SAVE_ERROR}" 2>&1 || show_error
 
     if [ -d "${RELEASE_DIR}/3rdparty/bootloader/overlays" ]; then
       mcopy -s "${RELEASE_DIR}/3rdparty/bootloader/overlays" :: >"${SAVE_ERROR}" 2>&1 || show_error
