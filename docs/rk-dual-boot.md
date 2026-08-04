@@ -65,8 +65,12 @@ U 盘装 EmuELEC**。由 eMMC 上那颗 DRAM 时序已校准、保开机的 vend
 在 **Armbian** 里跑（需联网、U 盘要插着）：
 
 ```bash
-curl -L https://raw.githubusercontent.com/w2xg2022/EmuELEC/main/docs/rk-dualboot/switch-to-emuelec.sh | bash
+curl -fsSL https://raw.githubusercontent.com/w2xg2022/EmuELEC/main/docs/rk-dualboot/switch-to-emuelec.sh -o /tmp/switch-to-emuelec.sh && sh /tmp/switch-to-emuelec.sh
 ```
+
+> ★先下载再执行，别用 `curl | sh`★：管线执行看不到脚本的错误输出、失败了也不能原地重跑，
+> 而且脚本内部呼叫的 helper 会继承那条管线当 stdin —— 一旦它读走 stdin，剩下的脚本内容就没了，
+> 表现是「跑到一半安静结束、什么都没发生」。
 
 > 没 `curl` 就用 `wget -qO- <同一网址> | bash`
 
@@ -84,6 +88,15 @@ curl -L https://raw.githubusercontent.com/w2xg2022/EmuELEC/main/docs/rk-dualboot
 
 它会挂 eMMC boot 分区、删掉 `emuelec/TRIGGER`、然后重开。存到 `/storage` 之后
 下次直接 `sh /storage/switch-to-armbian.sh` 就行。
+
+## TRIGGER 是常驻的，不是一次性的
+
+u-boot 只**读** TRIGGER、不删它。所以放下去之后**每次开机都进 EmuELEC**，
+直到你在 EmuELEC 里跑 `switch-to-armbian.sh` 把它删掉为止。
+
+这是刻意的：万一那边出问题，机器不会「重开一次就莫名其妙回到 Armbian」，
+你能靠开机结果本身判断是哪个系统在跑 —— 这类板子的 u-boot 通常不往 HDMI 输出，
+看不到任何开机讯息，这一点尤其重要。
 
 ## 装成常驻命令（可选）
 

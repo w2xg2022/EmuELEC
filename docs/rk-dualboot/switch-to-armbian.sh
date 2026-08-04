@@ -16,9 +16,11 @@ set -e
 EMMC_BOOT_DEV="${EMMC_BOOT_DEV:-/dev/mmcblk0p1}"
 M=/tmp/emmcboot
 
+MOUNTED_BY_US=0
 mkdir -p "$M"
-if ! mountpoint -q "$M"; then
+if ! mountpoint -q "$M" 2>/dev/null && ! grep -q " $M " /proc/mounts; then
   mount "${EMMC_BOOT_DEV}" "$M"
+  MOUNTED_BY_US=1
 fi
 
 if [ -e "$M/emuelec/TRIGGER" ]; then
@@ -29,7 +31,14 @@ else
 fi
 
 sync
-umount "$M"
+
+# A failed umount must NOT stop the reboot. By this point TRIGGER is already
+# gone, so the switch has effectively happened; letting set -e abort here only
+# makes it look like nothing happened. Unmount just what we mounted ourselves.
+if [ "$MOUNTED_BY_US" = "1" ]; then
+  umount "$M" 2>/dev/null || echo "Note: could not unmount $M (harmless, TRIGGER is already removed)."
+fi
+
 echo "Rebooting in 3 seconds..."
 sleep 3
 reboot

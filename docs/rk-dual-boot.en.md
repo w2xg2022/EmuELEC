@@ -75,8 +75,13 @@ At boot the u-boot script in `/boot/boot.cmd` checks the eMMC boot partition for
 Run this in **Armbian** (needs network, stick plugged in):
 
 ```bash
-curl -L https://raw.githubusercontent.com/w2xg2022/EmuELEC/main/docs/rk-dualboot/switch-to-emuelec.sh | bash
+curl -fsSL https://raw.githubusercontent.com/w2xg2022/EmuELEC/main/docs/rk-dualboot/switch-to-emuelec.sh -o /tmp/switch-to-emuelec.sh && sh /tmp/switch-to-emuelec.sh
 ```
+
+> **Download first, then run -- do not use `curl | sh`.** A pipeline hides the
+> script's error output, cannot be re-run in place, and the helper the script
+> calls inherits that pipe as its stdin: if anything reads stdin, the rest of
+> the script is swallowed and it just stops halfway with no message.
 
 > No `curl`? Use `wget -qO- <same url> | bash`
 
@@ -236,3 +241,14 @@ parts and have not needed changing.
   onto eMMC as a single-boot system. That wipes the Armbian rootfs but keeps
   u-boot and the BOOT partition as the chainload host and as the MASKROM
   recovery path. See [docs/emmc-install.md](emmc-install.md).
+
+## The TRIGGER file is persistent, not one-shot
+
+u-boot only **reads** TRIGGER, it never deletes it. Once the file is there,
+**every** boot goes to EmuELEC until you remove it by running
+`switch-to-armbian.sh` from EmuELEC.
+
+That is deliberate: if something goes wrong on the EmuELEC side the board does
+not silently fall back to Armbian on the next reboot, so the boot outcome
+itself still tells you which system ran -- which matters because the stock
+u-boot on these boards usually prints nothing to HDMI.

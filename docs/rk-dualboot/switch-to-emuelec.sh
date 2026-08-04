@@ -38,6 +38,15 @@
 #      only way back from an unbootable kernel is a MASKROM reflash.
 
 set -e
+
+# Never fail silently. This script runs under `set -e` and step 3 calls an
+# EXTERNAL helper -- any non-zero exit from it aborts the whole script on the
+# spot. That is exactly what bit us on 2026-08-04 (ROCKNIX side, same design):
+# the payload was synced and boot.cmd was patched, but TRIGGER was never set
+# and the board never rebooted, with not one word of explanation on screen.
+STEP="startup"
+trap 'rc=$?; [ "$rc" -ne 0 ] && echo "*** Aborted during [${STEP}], exit code ${rc} -- TRIGGER not set, the board still boots Armbian ***" >&2' EXIT
+
 BASE=https://raw.githubusercontent.com/w2xg2022/EmuELEC/main/docs/rk-dualboot
 SYNC_BIN=/usr/local/sbin/emuelec-chainload-sync.sh
 UNIT=/etc/systemd/system/emuelec-chainload-sync.service
@@ -46,10 +55,13 @@ UNIT=/etc/systemd/system/emuelec-chainload-sync.service
 
 # Fetch a file from the directory this script came from if it is there (handy
 # when the whole folder was cloned), otherwise from GitHub.
+# Guard with [ -f "$0" ]: when the script is piped into a shell, "$0" is not a
+# path, dirname yields "." and "the copy next to it" silently resolves to a
+# same-named file in the current directory.
 fetch() {
   _name="$1"; _dest="$2"
   _local="$(dirname "$0")/${_name}"
-  if [ -f "${_local}" ]; then
+  if [ -f "$0" ] && [ -f "${_local}" ]; then
     cp -f "${_local}" "${_dest}"
   else
     curl -fsSL "${BASE}/${_name}" -o "${_dest}"
@@ -79,6 +91,7 @@ install_boot_block() {
 }
 
 # --- 1. install / refresh the sync helper and its service -------------------
+STEP="installing the payload sync helper"
 echo "== Installing the payload sync helper =="
 mkdir -p "$(dirname "${SYNC_BIN}")"
 fetch emuelec-chainload-sync.sh "${SYNC_BIN}"
@@ -107,6 +120,7 @@ block_is_outdated() {
   return 1
 }
 
+STEP="installing/upgrading the chainload block"
 if ! grep -q 'emuelec/TRIGGER' /boot/boot.cmd 2>/dev/null; then
   echo "== First run: installing the chainload block into /boot/boot.cmd =="
   install_boot_block
@@ -127,13 +141,37 @@ elif block_is_outdated; then
 fi
 
 # --- 3. sync the payload ----------------------------------------------------
+#
+# A failed sync must NOT veto the switch. The helper has several legitimate
+# non-zero exits (no stick attached, image ships several dtbs and needs
+# DTB_NAME, ...); calling it bare under `set -e` turns every one of them into
+# "the switch silently did nothing". If eMMC already holds a payload the board
+# can still chainload -- it just runs whatever is there.
+#
+# `< /dev/null`: this script is often piped into a shell, and the helper would
+# inherit that pipe as its stdin. If it (or anything it calls) read stdin, the
+# not-yet-executed rest of this script would be swallowed -- which again looks
+# like "it stopped halfway with no error".
+STEP="syncing KERNEL + dtb"
 echo "== Syncing KERNEL + dtb to eMMC =="
-"${SYNC_BIN}"
+if ! "${SYNC_BIN}" < /dev/null; then
+  if [ -f /boot/emuelec/KERNEL ] && [ -f /boot/emuelec/dtb ]; then
+    echo "!! Sync failed, but eMMC already has a payload -- continuing with it."
+    echo "!! If you just flashed a new image, plug the stick back in and re-run."
+  else
+    echo "*** Sync failed and eMMC has no payload -- cannot chainload. ***"
+    exit 1
+  fi
+fi
 
 # --- 4. flip the switch -----------------------------------------------------
+STEP="setting TRIGGER"
 mkdir -p /boot/emuelec
 touch /boot/emuelec/TRIGGER
 sync
+[ -f /boot/emuelec/TRIGGER ] || { echo "*** Could not create TRIGGER (is /boot read-only?) ***"; exit 1; }
+STEP=""
+trap - EXIT
 echo "TRIGGER set. Next boot goes to EmuELEC (USB). Rebooting in 3 seconds..."
 sleep 3
 reboot
