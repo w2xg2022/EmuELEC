@@ -132,16 +132,15 @@ jobs:
           set -euo pipefail
           gh release upload "${{ inputs.RELEASE_TAG }}" "${OUT}" "${OUT}.sha256" \
             --repo "${{ github.repository }}" --clobber
-          NOTES=$(gh release view "${{ inputs.RELEASE_TAG }}" --repo "${{ github.repository }}" --json body --jq .body)
-          case "${NOTES}" in
-            *"es4all-profiles baked in"*)
-              # Re-injected: replace the old line rather than stacking a second one.
-              NOTES=$(printf '%s\n' "${NOTES}" | grep -v "es4all-profiles baked in") ;;
-          esac
-          NOTES="${NOTES}
-
-        es4all-profiles baked in: ${{ steps.profiles.outputs.sha }} (manifest ${{ steps.profiles.outputs.version }})"
-          gh release edit "${{ inputs.RELEASE_TAG }}" --repo "${{ github.repository }}" --notes "${NOTES}"
+          # Record provenance in the notes. Built with printf into a file: an
+          # inline multi-line shell string would have to break the YAML block's
+          # indentation, and GitHub rejects that even when a local yaml parser
+          # accepts it (learned the hard way -- HTTP 422 on dispatch).
+          gh release view "${{ inputs.RELEASE_TAG }}" --repo "${{ github.repository }}" --json body --jq .body \
+            | grep -v "es4all-profiles baked in" > /tmp/notes.md || true
+          printf '\nes4all-profiles baked in: %s (manifest %s)\n' \
+            "${{ steps.profiles.outputs.sha }}" "${{ steps.profiles.outputs.version }}" >> /tmp/notes.md
+          gh release edit "${{ inputs.RELEASE_TAG }}" --repo "${{ github.repository }}" --notes-file /tmp/notes.md
 
       - name: Upload artifact as well
         uses: actions/upload-artifact@v4
