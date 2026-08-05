@@ -109,11 +109,41 @@ jobs:
           sync
           sudo umount /mnt/flash
           sudo losetup -d "$LOOP"
-          OUT="$(basename "$SRC" .img.gz)-profiles.img.gz"
+          # Keep the original file name and overwrite the release asset.
+          #
+          # The first version kept both: the release asset (no payload) and an
+          # artifact named *-profiles.img.gz. That is worse, not safer -- whoever
+          # lands on the release page downloads the one WITHOUT the payload, i.e.
+          # the image whose first boot is silently wrong. One tag, one image.
+          #
+          # Provenance does not come from the file name (which is now identical
+          # either way) but from the release notes, appended below: they record the
+          # exact profiles commit and manifest version baked in. A file name cannot
+          # carry that anyway -- it could only tell you "injected" or not, never which.
+          OUT="$(basename "$SRC")"
           gzip -c base.img > "$OUT"
+          sha256sum "$OUT" > "$OUT.sha256"
           echo "OUT=$OUT" >> "$GITHUB_ENV"
 
-      - name: Upload
+      - name: Publish back to the release (replacing the un-injected image)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "${{ inputs.RELEASE_TAG }}" "${OUT}" "${OUT}.sha256" \
+            --repo "${{ github.repository }}" --clobber
+          NOTES=$(gh release view "${{ inputs.RELEASE_TAG }}" --repo "${{ github.repository }}" --json body --jq .body)
+          case "${NOTES}" in
+            *"es4all-profiles baked in"*)
+              # Re-injected: replace the old line rather than stacking a second one.
+              NOTES=$(printf '%s\n' "${NOTES}" | grep -v "es4all-profiles baked in") ;;
+          esac
+          NOTES="${NOTES}
+
+        es4all-profiles baked in: ${{ steps.profiles.outputs.sha }} (manifest ${{ steps.profiles.outputs.version }})"
+          gh release edit "${{ inputs.RELEASE_TAG }}" --repo "${{ github.repository }}" --notes "${NOTES}"
+
+      - name: Upload artifact as well
         uses: actions/upload-artifact@v4
         with:
           name: image-with-profiles
