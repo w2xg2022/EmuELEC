@@ -34,6 +34,7 @@
 |---|---|---|---|---|---|
 | X98mini | Amlogic S905W2 (S4) | Mali-G31 | 第三（闭源 BSP + GLES） | 4G+32G、2×USB2.0、TF 卡槽、百兆以太网、WiFi/蓝牙（W522A）、音源 HDMI/AV | [下载](https://github.com/w2xg2022/EmuELEC/releases?q=X98mini&expanded=true) |
 | E900V22C | Amlogic S905L3A (G12A) | Mali-G31 | 第三（闭源 BSP + GLES） | 2G+8G、2×USB2.0、百兆以太网、WiFi/蓝牙（UWE5621DS）、音源 HDMI/AV、PSP 可玩 | [下载](https://github.com/w2xg2022/EmuELEC/releases?q=E900V22C&expanded=true) |
+| MD1000 | Rockchip RK3566 | Mali-G52 | **第一（Vulkan 已验证）** | 2G+32G、2×USB2.0+1×USB3.0、千兆以太网、WiFi/蓝牙（RTL8822CS）、音源 HDMI/AV、**支持 Vulkan**、PSP 可玩 | [下载](https://github.com/w2xg2022/EmuELEC/releases?q=MD1000&expanded=true) |
 
 > 每个型号各自发布独立 Release（tag 形如 `<型号>-<run id>`），**不要用
 > `releases/latest`**——那只会指向最后完成的那个型号，另一个型号会下载到错的固件。
